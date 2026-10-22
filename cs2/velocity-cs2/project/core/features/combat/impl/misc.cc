@@ -114,6 +114,7 @@ void Misc::Antiaim::OnRender(xdraw::draw_list& draw_list) const {
       draw_list.text(feet.x - text_w * 0.5f, feet.y + 30.0f, text,
                      xdraw::color{255, 255, 255, 220},
                      xdraw::text_style::outlined);
+      xdraw::pop_font();
     }
   }
 #endif
@@ -229,7 +230,7 @@ float Misc::Antiaim::GetPitch(float view_pitch) {
   }
 }
 
-std::optional<float> Misc::Antiaim::MeasureHeadDirection(
+std::optional<float> Misc::Antiaim::MeasureHeadYawOffset(
     const systems::Local::Snapshot& local) const {
   if (!local.pawn) {
     return std::nullopt;
@@ -237,19 +238,32 @@ std::optional<float> Misc::Antiaim::MeasureHeadDirection(
 
   const auto head_bone =
       systems::g_bones.Get(local.pawn, cstypes::bone_ids::kHead);
-  if (head_bone.position.LengthSqr() < 1.0f) {
+  const auto pelvis_bone =
+      systems::g_bones.Get(local.pawn, cstypes::bone_ids::kPelvis);
+  if (head_bone.position.LengthSqr() < 1.0f ||
+      pelvis_bone.position.LengthSqr() < 1.0f) {
     return std::nullopt;
   }
 
-  const auto forward =
+  const auto head_forward =
       head_bone.rotation.RotateVector(math::Vector3{0.0f, 1.0f, 0.0f});
-  const math::Vector2 horizontal{forward.x, forward.y};
-  if (horizontal.LengthSqr() < 1.0e-8f) {
+  const auto pelvis_forward =
+      pelvis_bone.rotation.RotateVector(math::Vector3{0.0f, 1.0f, 0.0f});
+
+  const math::Vector2 head_horizontal{head_forward.x, head_forward.y};
+  const math::Vector2 pelvis_horizontal{pelvis_forward.x, pelvis_forward.y};
+  if (head_horizontal.LengthSqr() < 1.0e-8f ||
+      pelvis_horizontal.LengthSqr() < 1.0e-8f) {
     return std::nullopt;
   }
 
-  return std::atan2f(horizontal.y, horizontal.x) *
-         (180.0f / std::numbers::pi_v<float>);
+  const auto head_yaw = std::atan2f(head_horizontal.y, head_horizontal.x) *
+                        (180.0f / std::numbers::pi_v<float>);
+  const auto pelvis_yaw =
+      std::atan2f(pelvis_horizontal.y, pelvis_horizontal.x) *
+      (180.0f / std::numbers::pi_v<float>);
+
+  return math::helpers::NormalizeYaw(pelvis_yaw - head_yaw);
 }
 
 float Misc::Antiaim::GetYaw(const math::Vector3& view_angles,
@@ -463,25 +477,15 @@ float Misc::Antiaim::GetYaw(const math::Vector3& view_angles,
 
   this->m_head_offset_ = 0.0f;
 
-  if (const auto head_direction = this->MeasureHeadDirection(local)) {
-    if (local_game_scene_node) {
-      const auto abs_rotation = memory::Read<math::Vector3>(
-          local_game_scene_node +
-          SCHEMA("CGameSceneNode", "m_angAbsRotation"_hash));
+  if (const auto head_offset = this->MeasureHeadYawOffset(local)) {
+    const auto correction = std::clamp(*head_offset, -90.0f, 90.0f);
 
-      if (std::isfinite(abs_rotation.y)) {
-        auto correction =
-            math::helpers::NormalizeYaw(abs_rotation.y - *head_direction);
-        correction = std::clamp(correction, -90.0f, 90.0f);
+    this->m_head_offset_ = correction;
 
-        this->m_head_offset_ = correction;
-
-        if (settings::g_combat.m_antiaim.auto_yaw_adjust.value &&
-            settings::g_combat.m_antiaim.pitch !=
-                settings::Combat::Antiaim::PitchMode::kNone) {
-          yaw += correction;
-        }
-      }
+    if (settings::g_combat.m_antiaim.auto_yaw_adjust.value &&
+        settings::g_combat.m_antiaim.pitch !=
+            settings::Combat::Antiaim::PitchMode::kNone) {
+      yaw += correction;
     }
   }
 
