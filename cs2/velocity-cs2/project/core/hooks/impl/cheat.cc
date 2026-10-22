@@ -575,7 +575,7 @@ void __fastcall Cheat::CreateMove(std::uintptr_t thisptr, int slot,
 
     diag::SetExceptionPhase("create_move: final subtick");
     const auto final_base = current_cmd->csgo_user_cmd.MutableBase();
-    if (final_base && final_base->SubtickMovesSize() > 0 &&
+    if (final_base && systems::Input::HasMoveSubticks(final_base) &&
         !features::movement::g_test_strafer.HandledThisTick()) {
       final_base->SetForwardmove(0.0f);
       final_base->SetLeftmove(0.0f);

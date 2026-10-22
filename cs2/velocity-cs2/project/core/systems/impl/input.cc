@@ -20,6 +20,26 @@ void Input::Update() {
   this->m_current_cmd_ = this->GetCurrentCmd(local_controller);
 }
 
+bool Input::HasMoveSubticks(proto::BaseUsercmdPb* base) {
+  if (!base) {
+    return false;
+  }
+
+  for (auto i = 0; i < base->SubtickMovesSize(); ++i) {
+    const auto step = base->MutableSubtickMoves(i);
+    if (!step) {
+      continue;
+    }
+
+    if (step->m_has_bits.Test(0x1u) || step->m_has_bits.Test(0x8u) ||
+        step->m_has_bits.Test(0x10u)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 void Input::Apply() {
   const auto local = systems::g_local.Get();
 
@@ -33,7 +53,7 @@ void Input::Apply() {
   }
 
   diag::SetExceptionPhase("input apply: subtick movement");
-  {
+  if (!HasMoveSubticks(base)) {
     const auto movement_services =
         local.pawn ? memory::Read<std::uintptr_t>(
                          local.pawn +

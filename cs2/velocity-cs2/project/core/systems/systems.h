@@ -139,6 +139,7 @@ class Input {
 
   [[nodiscard]] Usercmd* Get() const { return this->m_current_cmd_; }
   [[nodiscard]] Usercmd* GetCurrentCmd(std::uintptr_t local_controller) const;
+  [[nodiscard]] static bool HasMoveSubticks(proto::BaseUsercmdPb* base);
   [[nodiscard]] proto::SubtickMoveStep* AcquireSubtickStep(
       proto::RepeatedPtrField<proto::SubtickMoveStep>* subtick_moves) const;
   [[nodiscard]] proto::SubtickMoveStep* AcquireSubtickStepAt(
