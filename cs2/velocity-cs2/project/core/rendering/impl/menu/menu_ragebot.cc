@@ -101,6 +101,7 @@ void Menu::DrawRagebot(float group_w) const {
     xui::checkbox("force right", aa.manual_right);
     xui::checkbox("hide onshot", aa.hide_shots);
     xui::checkbox("avoid backstab", aa.avoid_backstab);
+    xui::checkbox("base on real view", aa.real_view_goal);
     xui::checkbox("direction indicator", aa.direction_indicator);
 
     if (xui::begin_popup("##aa_indicator", 220.0f)) {

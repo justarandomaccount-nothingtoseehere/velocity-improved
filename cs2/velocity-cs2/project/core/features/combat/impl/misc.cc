@@ -465,8 +465,10 @@ float Misc::Antiaim::GetYaw(const math::Vector3& view_angles,
                : std::nullopt;
   };
 
-  if (const auto target_yaw = pick_target_yaw()) {
-    base_yaw = *target_yaw;
+  if (!settings::g_combat.m_antiaim.real_view_goal.value) {
+    if (const auto target_yaw = pick_target_yaw()) {
+      base_yaw = *target_yaw;
+    }
   }
   auto yaw = base_yaw;
   if (this->m_yaw_side_ == -1) {

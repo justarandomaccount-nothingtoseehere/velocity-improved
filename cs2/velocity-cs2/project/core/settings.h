@@ -211,6 +211,7 @@ struct Combat {
         false, {'C', xui::bind_mode::toggle}, "force right", "anti aim"};
     xui::setting hide_shots{true, {}, "hide onshot", "anti aim"};
     xui::setting avoid_backstab{true, {}, "avoid backstab", "anti aim"};
+    xui::setting real_view_goal{false, {}, "base on real view", "anti aim"};
 
     xui::setting direction_indicator{
         true, {}, "direction indicator", "anti aim"};
