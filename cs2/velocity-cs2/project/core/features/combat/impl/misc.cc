@@ -235,29 +235,16 @@ std::optional<float> Misc::Antiaim::MeasureHeadDirection(
     return std::nullopt;
   }
 
-  const auto game_scene_node = memory::Read<std::uintptr_t>(
-      local.pawn + SCHEMA("C_BaseEntity", "m_pGameSceneNode"_hash));
-  if (!game_scene_node) {
-    return std::nullopt;
-  }
-
-  const auto hitbox_set = systems::g_hitboxes.Query(game_scene_node, false);
-  if (hitbox_set.count < 1) {
-    return std::nullopt;
-  }
-
   const auto head_bone =
       systems::g_bones.Get(local.pawn, cstypes::bone_ids::kHead);
   if (head_bone.position.LengthSqr() < 1.0f) {
     return std::nullopt;
   }
 
-  const auto& head_hb = hitbox_set.entries[0];
-  const auto offset =
-      head_bone.rotation.RotateVector((head_hb.mins + head_hb.maxs) * 0.5f);
-
-  const math::Vector2 horizontal{offset.x, offset.y};
-  if (horizontal.LengthSqr() < 4.0f) {
+  const auto forward =
+      head_bone.rotation.RotateVector(math::Vector3{0.0f, 1.0f, 0.0f});
+  const math::Vector2 horizontal{forward.x, forward.y};
+  if (horizontal.LengthSqr() < 1.0e-8f) {
     return std::nullopt;
   }
 
@@ -476,15 +463,25 @@ float Misc::Antiaim::GetYaw(const math::Vector3& view_angles,
 
   this->m_head_offset_ = 0.0f;
 
-  if (settings::g_combat.m_antiaim.auto_yaw_adjust.value &&
-      settings::g_combat.m_antiaim.pitch !=
-          settings::Combat::Antiaim::PitchMode::kNone) {
-    if (const auto head_direction = this->MeasureHeadDirection(local)) {
-      auto correction = math::helpers::NormalizeYaw(base_yaw - *head_direction);
-      correction = std::clamp(correction, -90.0f, 90.0f);
+  if (const auto head_direction = this->MeasureHeadDirection(local)) {
+    if (local_game_scene_node) {
+      const auto abs_rotation = memory::Read<math::Vector3>(
+          local_game_scene_node +
+          SCHEMA("CGameSceneNode", "m_angAbsRotation"_hash));
 
-      this->m_head_offset_ = correction;
-      yaw += correction;
+      if (std::isfinite(abs_rotation.y)) {
+        auto correction =
+            math::helpers::NormalizeYaw(abs_rotation.y - *head_direction);
+        correction = std::clamp(correction, -90.0f, 90.0f);
+
+        this->m_head_offset_ = correction;
+
+        if (settings::g_combat.m_antiaim.auto_yaw_adjust.value &&
+            settings::g_combat.m_antiaim.pitch !=
+                settings::Combat::Antiaim::PitchMode::kNone) {
+          yaw += correction;
+        }
+      }
     }
   }
 
