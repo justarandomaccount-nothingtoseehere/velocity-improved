@@ -36,6 +36,10 @@ void Misc::Antiaim::OnCreateMove(systems::Input::Usercmd* cmd) {
 
   const auto local = systems::g_local.Get();
   const auto base = cmd->csgo_user_cmd.MutableBase();
+  if (!base || !base->Viewangles()) {
+    return;
+  }
+
   const auto view_angles = systems::g_input.GetViewAngles();
   const auto& ctx = g_shared.Ctx();
 
