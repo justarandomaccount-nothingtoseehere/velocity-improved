@@ -563,8 +563,6 @@ void Misc::Antiaim::CorrectMovement(systems::Input::Usercmd* cmd) {
   }
 }
 
-}
-
 void Misc::Antiaim::CorrectMovementYawDelta(systems::Input::Usercmd* cmd) {
   if (!this->m_should_correct_) {
     return;

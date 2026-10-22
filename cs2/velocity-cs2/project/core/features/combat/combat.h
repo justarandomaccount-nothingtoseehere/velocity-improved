@@ -78,8 +78,7 @@ class Shared {
     [[nodiscard]] std::array<systems::Bones::Data, 27> GetSkeleton(
         const Record& record) const;
 
-    [[nodiscard]] std::optional<Record> Extrapolate(std::uintptr_t pawn,
-                                                    int extra_ticks = 0);
+    [[nodiscard]] std::optional<Record> Extrapolate(std::uintptr_t pawn);
 
    private:
     void PredictMovement(ExtrapolationData& data,
@@ -338,6 +337,7 @@ class Misc {
     float m_head_offset_{};
   };
 
+ public:
   class Duckpeek {
    public:
     enum class State : std::uint8_t {
@@ -394,6 +394,7 @@ class Misc {
     bool m_release_armed_{};
   };
 
+ private:
   class Quickpeek {
    public:
     void OnCreateMove(systems::Input::Usercmd* cmd);
@@ -550,13 +551,10 @@ class Rage {
       const systems::Local::Snapshot& local) const;
   [[nodiscard]] std::vector<Candidate> GatherCandidates(
       const systems::Local::Snapshot& local, float max_distance_sq = 0.0f,
-      int min_damage_override = -1, int lead_ticks = 0) const;
-
-  enum class GunPlan : std::uint8_t { kFire, kAim };
+      int min_damage_override = -1) const;
 
   void RunGun(systems::Input::Usercmd* cmd, const AimContext& ctx,
-              const systems::Local::Snapshot& local,
-              GunPlan plan = GunPlan::kFire, int lead_ticks = 0);
+              const systems::Local::Snapshot& local, bool allow_fire = true);
   void RunTaser(systems::Input::Usercmd* cmd, const AimContext& ctx,
                 const systems::Local::Snapshot& local);
   void RunKnife(systems::Input::Usercmd* cmd, const AimContext& ctx,
