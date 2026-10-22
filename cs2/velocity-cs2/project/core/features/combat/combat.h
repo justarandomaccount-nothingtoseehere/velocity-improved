@@ -49,6 +49,10 @@ class Shared {
       void Restore();
     };
 
+    [[nodiscard]] static float BudgetSeconds();
+    [[nodiscard]] static int BudgetTicks();
+    [[nodiscard]] static int MaxUnlagTicks();
+
     struct VisualRecord {
       math::Vector3 origin{};
       std::array<systems::Bones::Data, 27> bones{};
@@ -74,7 +78,8 @@ class Shared {
     [[nodiscard]] std::array<systems::Bones::Data, 27> GetSkeleton(
         const Record& record) const;
 
-    [[nodiscard]] std::optional<Record> Extrapolate(std::uintptr_t pawn);
+    [[nodiscard]] std::optional<Record> Extrapolate(std::uintptr_t pawn,
+                                                    int extra_ticks = 0);
 
    private:
     void PredictMovement(ExtrapolationData& data,
@@ -162,13 +167,8 @@ class Shared {
       bool is_uninterpolated{};
     };
 
-    struct EyeCandidates {
-      EyeCandidate entries[2]{};
-      int count{};
-    };
-
     void Snapshot(std::uintptr_t local_pawn, std::uintptr_t weapon_services);
-    [[nodiscard]] EyeCandidates GetCandidates() const;
+    [[nodiscard]] std::vector<EyeCandidate> GetCandidates() const;
     [[nodiscard]] bool HasData() const { return this->m_count_ > 0; }
     [[nodiscard]] int ClientTick() const { return this->m_client_tick_; }
     [[nodiscard]] float ClientTickFrac() const {
@@ -186,6 +186,11 @@ class Shared {
     [[nodiscard]] int NewestTick() const {
       return this->m_count_ > 0 ? this->m_entries_[this->m_count_ - 1].tick
                                 : -1;
+    }
+    [[nodiscard]] int SpanTicks() const {
+      return this->m_count_ > 1 ? this->m_entries_[this->m_count_ - 1].tick -
+                                      this->m_entries_[0].tick
+                                : 0;
     }
 
    private:
@@ -253,6 +258,8 @@ class Shared {
   [[nodiscard]] math::Vector3 GetShootPosition() const;
   [[nodiscard]] math::Vector3 GetInterpolatedShootPosition(
       std::uintptr_t local_pawn, bool newest = false) const;
+  [[nodiscard]] math::Vector3 GetShootPositionAtTick(int tick,
+                                                     float frac) const;
   [[nodiscard]] int CalculateStopTicks(const math::Vector3& velocity,
                                        float max_speed,
                                        std::uintptr_t local_pawn) const;
@@ -260,12 +267,20 @@ class Shared {
   [[nodiscard]] float GetInaccuracy(bool update_accuracy_penalty) const;
   [[nodiscard]] float GetInaccuracyAtVelocity(
       std::uintptr_t local_pawn, const math::Vector3& velocity) const;
+  [[nodiscard]] float GetInaccuracyAtStance(std::uintptr_t local_pawn,
+                                            const math::Vector3& velocity,
+                                            bool standing) const;
+  [[nodiscard]] float GetVDataFloat(std::uint32_t field_offset) const;
   [[nodiscard]] float GetAirInaccuracy(float vertical_speed, float jump_initial,
                                        float jump_apex) const;
   [[nodiscard]] bool CanShoot(systems::Input::Usercmd* cmd,
                               std::uintptr_t local_controller,
                               bool check_next_attack = true) const;
-  [[nodiscard]] bool IsMaxAccuracy(float inaccuracy) const;
+  [[nodiscard]] bool IsMaxAccuracy(float inaccuracy, bool standing) const;
+  [[nodiscard]] bool IsDucking() const {
+    return (systems::g_prediction.Pre().flags &
+            cstypes::entity_flags::kDucking) != 0;
+  }
   [[nodiscard]] math::Vector3 SimulateAimPunch(int recoil_index) const;
 
   bool RayVsCapsule(const math::Vector3& ray_origin,
@@ -307,7 +322,10 @@ class Misc {
     [[nodiscard]] float GetPitch(float view_pitch);
     [[nodiscard]] float GetYaw(const math::Vector3& view_angles,
                                const systems::Local::Snapshot& local);
+    [[nodiscard]] std::optional<float> MeasureHeadDirection(
+        const systems::Local::Snapshot& local) const;
     void CorrectMovement(systems::Input::Usercmd* cmd);
+    void CorrectMovementYawDelta(systems::Input::Usercmd* cmd);
     [[nodiscard]] bool IsNearLadder(std::uintptr_t local_pawn) const;
 
     math::Vector3 m_old_angles_{};
@@ -317,16 +335,63 @@ class Misc {
     bool m_should_correct_{};
     bool m_antiaim_active_{};
     float m_indicator_yaw_{};
+    float m_head_offset_{};
   };
 
   class Duckpeek {
    public:
+    enum class State : std::uint8_t {
+      kIdle,
+      kPeeking,
+      kRecovering,
+    };
+
+    enum class ShotDecision : std::uint8_t {
+      kHold,
+      kFire,
+      kFirePeek,
+    };
+
     void OnCreateMove(systems::Input::Usercmd* cmd);
-    void OnOverrideView(std::uintptr_t view_setup);
+
+    [[nodiscard]] State GetState() const noexcept { return this->m_state_; }
+    [[nodiscard]] bool IsPeeking() const noexcept {
+      return this->m_state_ == State::kPeeking;
+    }
+
+    // The engine selects the stance cone from FL_DUCKING, which only clears
+    // once the duck amount reaches 0.75. A shot that leaves on the release
+    // tick therefore still uses the crouch stance.
+    [[nodiscard]] bool PlannedShotIsStanding(std::uintptr_t local_pawn) const;
+
+    // Number of movement ticks that run until the shot leaves the barrel.
+    [[nodiscard]] int GetTicksUntilShot(std::uintptr_t local_pawn) const;
+
+    // Velocity the shot will be taken with. Releasing the duck lifts the
+    // wish speed cap, so the cone that applies at the shot tick is wider than
+    // the cone the player currently has.
+    [[nodiscard]] math::Vector3 PredictShotVelocity(
+        std::uintptr_t local_pawn, const math::Vector3& velocity) const;
+
+    // Decides whether the shot may leave the barrel on this tick and arms
+    // the duck release when the timing requires one.
+    [[nodiscard]] ShotDecision PrepareShot(bool has_target, bool shot_viable,
+                                           std::uintptr_t local_pawn);
+
+    void OnFired() noexcept;
+    void OnShotSkipped() noexcept;
+    void OnTargetLost() noexcept;
+    void Reset() noexcept;
 
    private:
-    bool m_was_active_{};
-    bool m_fake_stand_active_{};
+    [[nodiscard]] float GetDuckAmount(std::uintptr_t local_pawn) const;
+    [[nodiscard]] float GetStandRate(std::uintptr_t local_pawn) const;
+    void Abort() noexcept;
+
+    State m_state_{State::kIdle};
+    int m_peek_ticks_{};
+    int m_reduck_ticks_{};
+    bool m_release_armed_{};
   };
 
   class Quickpeek {
@@ -387,20 +452,15 @@ class Rage {
     return this->m_firing_this_tick_;
   }
   [[nodiscard]] bool IsCockingRevolver() const noexcept {
-    return this->m_revolver_cock_ticks_ > 0;
+    return this->m_revolver_holding_;
   }
-  [[nodiscard]] bool ShouldReleaseDuckForShot() const noexcept {
-    return this->m_release_duck_for_shot_;
-  }
-  [[nodiscard]] bool DuckpeekWantsReduck() const noexcept {
-    return this->m_duckpeek_reduck_;
-  }
-  void ClearDuckpeekReduck() noexcept { this->m_duckpeek_reduck_ = false; }
 
   static constexpr auto kMaxLagcompRecords{16};
   // Scan the newest, a middle and the oldest valid record. Newest/oldest
   // alone can skip the server rewind pose that matches bullet impacts.
   static constexpr auto kMaxScanRecords{3};
+  // Every extra shoot origin multiplies the cost of the head scan.
+  static constexpr auto kMaxSelfBacktrackCandidates{4};
 
  private:
   struct AimContext {
@@ -489,11 +549,14 @@ class Rage {
       const AimContext& ctx, const math::Vector3& current_eye,
       const systems::Local::Snapshot& local) const;
   [[nodiscard]] std::vector<Candidate> GatherCandidates(
-      const systems::Local::Snapshot& local,
-      float max_distance_sq = 0.0f) const;
+      const systems::Local::Snapshot& local, float max_distance_sq = 0.0f,
+      int min_damage_override = -1, int lead_ticks = 0) const;
+
+  enum class GunPlan : std::uint8_t { kFire, kAim };
 
   void RunGun(systems::Input::Usercmd* cmd, const AimContext& ctx,
-              const systems::Local::Snapshot& local, bool allow_fire = true);
+              const systems::Local::Snapshot& local,
+              GunPlan plan = GunPlan::kFire, int lead_ticks = 0);
   void RunTaser(systems::Input::Usercmd* cmd, const AimContext& ctx,
                 const systems::Local::Snapshot& local);
   void RunKnife(systems::Input::Usercmd* cmd, const AimContext& ctx,
@@ -511,12 +574,10 @@ class Rage {
       const systems::Local::Snapshot& local) const;
   [[nodiscard]] Target SelectBest(const AimContext& aim_ctx,
                                   const std::vector<ScanHit>& hits,
-                                  float eval_inaccuracy) const;
+                                  float eval_inaccuracy, float needed_hc) const;
   [[nodiscard]] float EvaluateHitchance(const ScanHit& hit,
                                         const AimContext& ctx,
                                         float inaccuracy) const;
-  [[nodiscard]] float GetStandingInaccuracy(
-      const systems::Local::Snapshot& local, const AimContext& ctx) const;
 
   [[nodiscard]] std::vector<ScanHit> ScanTaser(
       const math::Vector3& eye, const AimContext& ctx,
@@ -532,7 +593,7 @@ class Rage {
 
   void FireGun(systems::Input::Usercmd* cmd, const Target& tgt, bool was_forced,
                const math::Vector3& shoot_eye,
-               const systems::Local::Snapshot& local, bool subtick_attack);
+               const systems::Local::Snapshot& local);
   void FireMelee(systems::Input::Usercmd* cmd, const Target& tgt,
                  const systems::Local::Snapshot& local);
 
@@ -553,6 +614,22 @@ class Rage {
       const math::Vector3& origin, const math::Vector3& forward, float reach,
       std::uintptr_t target_pawn, std::uintptr_t local_pawn) const;
 
+  enum class DoubletapState : std::uint8_t {
+    kIdle,
+    kRelease,
+    kClaim,
+  };
+
+  void UpdateDoubletap(systems::Input::Usercmd* cmd);
+  [[nodiscard]] bool DoubletapBlocksShot() const noexcept;
+  [[nodiscard]] bool DoubletapHasClaim() const noexcept {
+    return this->m_dt_state_ == DoubletapState::kClaim;
+  }
+  [[nodiscard]] int DoubletapCycleTicks() const;
+  [[nodiscard]] bool DoubletapBuildClaim(const math::Vector3& hit_position,
+                                         int record_tick,
+                                         math::Vector3& out_angle);
+
   enum class PenetrationCrosshairState : std::uint8_t {
     kUnavailable,
     kBlocked,
@@ -562,19 +639,15 @@ class Rage {
   void UpdatePenetrationCrosshair(const systems::Local::Snapshot& local);
   void DrawPenetrationCrosshair(xdraw::draw_list& draw_list) const;
 
-  [[nodiscard]] bool ProcessDoubletap(systems::Input::Usercmd* cmd,
-                                      const systems::Local::Snapshot& local,
-                                      bool charge_dt);
-
   bool m_should_stop_{};
   bool m_firing_this_tick_{};
-  bool m_release_duck_for_shot_{};
-  bool m_duckpeek_reduck_{};
 
   std::uint8_t m_knife_attack_{};
   bool m_zeus_fired_{};
 
-  int m_revolver_cock_ticks_{};
+  int m_revolver_press_tick_{};
+  bool m_revolver_holding_{};
+  bool m_revolver_released_{};
   std::atomic<PenetrationCrosshairState> m_penetration_crosshair_state_{
       PenetrationCrosshairState::kUnavailable};
 
@@ -588,6 +661,11 @@ class Rage {
 
   mutable std::vector<DebugPoint> m_debug_points_{};
   mutable std::mutex m_debug_mtx_{};
+
+  DoubletapState m_dt_state_{DoubletapState::kIdle};
+  int m_dt_charge_tick_{-1};
+  int m_dt_claim_tick_{};
+  bool m_dt_charged_{};
 };
 
 class Legit {

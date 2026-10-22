@@ -461,41 +461,89 @@ bool Shared::Lagcomp::Record::Setup(std::uintptr_t pawn) {
   return true;
 }
 
+float Shared::Lagcomp::BudgetSeconds() {
+  const auto server_limit = CONVAR("sv_maxunlag");
+  const auto player_limit = CONVAR("sv_maxunlag_player");
+
+  if (!server_limit) {
+    return 0.0f;
+  }
+
+  const auto max_unlag = [&] {
+    const auto server_value = server_limit->Get<float>();
+    if (!player_limit) {
+      return server_value;
+    }
+
+    const auto player_value = player_limit->Get<float>();
+    return player_value > 0.0f ? std::min(server_value, player_value)
+                               : server_value;
+  }();
+
+  const auto net_channel =
+      memory::Call<std::uintptr_t>(PATTERN(patterns::get_net_channel), 0, 0);
+  if (!net_channel) {
+    return 0.0f;
+  }
+
+  // This value is the effective ping for the selected flow in this build;
+  // combining both flows double-counts latency and can erase the window.
+  const auto latency = memory::CallVfunc<float>(net_channel, 10, 0);
+
+  if (!std::isfinite(max_unlag) || !std::isfinite(latency)) {
+    return 0.0f;
+  }
+
+  return max_unlag - std::max(latency, 0.0f);
+}
+
+int Shared::Lagcomp::BudgetTicks() {
+  const auto seconds = BudgetSeconds();
+  if (seconds <= 0.0f) {
+    return 0;
+  }
+
+  return static_cast<int>(std::floor(seconds * 64.0f));
+}
+
+int Shared::Lagcomp::MaxUnlagTicks() {
+  const auto server_limit = CONVAR("sv_maxunlag");
+  if (!server_limit) {
+    return 0;
+  }
+
+  const auto max_unlag = server_limit->Get<float>();
+  if (!std::isfinite(max_unlag) || max_unlag <= 0.0f) {
+    return 0;
+  }
+
+  return static_cast<int>(std::floor(max_unlag * 64.0f));
+}
+
 bool Shared::Lagcomp::Record::IsValid() const {
   if (!this->valid) {
     return false;
   }
 
   const auto local_pawn = systems::g_local.Get().pawn;
-  const auto net_channel =
-      memory::Call<std::uintptr_t>(PATTERN(patterns::get_net_channel), 0, 0);
   const auto global_vars =
       memory::Read<std::uintptr_t>(addresses::globals::global_vars);
 
-  if (!local_pawn || !net_channel || !global_vars) {
+  if (!local_pawn || !global_vars) {
     return false;
   }
 
-  const auto max_unlag = [] {
-    const auto server_limit = CONVAR("sv_maxunlag")->Get<float>();
-    const auto player_limit = CONVAR("sv_maxunlag_player")->Get<float>();
-    return player_limit > 0.0f ? std::min(server_limit, player_limit)
-                               : server_limit;
-  }();
+  const auto budget = Lagcomp::BudgetSeconds();
+  if (budget <= 0.0f) {
+    return false;
+  }
 
   const auto current_time = memory::Read<float>(global_vars + 0x30);
-  const auto latency = memory::CallVfunc<float>(net_channel, 10, 0);
-
-  if (!std::isfinite(max_unlag) || !std::isfinite(current_time) ||
-      !std::isfinite(latency)) {
+  if (!std::isfinite(current_time)) {
     return false;
   }
 
-  // This value is the effective ping for the selected flow in this build;
-  // combining both flows double-counts latency and can erase the window.
-  const auto budget = max_unlag - std::max(latency, 0.0f);
-
-  return budget > 0.0f && this->simulation_time >= current_time - budget;
+  return this->simulation_time >= current_time - budget;
 }
 
 void Shared::Lagcomp::Record::Apply() {
@@ -705,9 +753,17 @@ std::vector<Shared::Lagcomp::Record*> Shared::Lagcomp::GetValidRecords(
     return result;
   }
 
-  const auto max_ticks =
+  auto max_ticks =
       std::clamp(settings::g_combat.m_lagcomp.max_backtrack_ticks.value, 1,
                  static_cast<int>(Rage::kMaxLagcompRecords));
+
+  // The server clamps its own rewind window, so a larger request can never be
+  // honoured. Never let the request exceed the window the server would use.
+  const auto budget_ticks = Lagcomp::BudgetTicks();
+  if (budget_ticks > 0) {
+    max_ticks = std::min(max_ticks, budget_ticks);
+  }
+
   const auto newest_tick = result.front()->tick;
 
   result.erase(std::remove_if(result.begin(), result.end(),
@@ -802,9 +858,9 @@ void Shared::ShootHistory::Snapshot(std::uintptr_t local_pawn,
   this->m_count_ = count;
 }
 
-Shared::ShootHistory::EyeCandidates Shared::ShootHistory::GetCandidates()
-    const {
-  EyeCandidates out{};
+std::vector<Shared::ShootHistory::EyeCandidate>
+Shared::ShootHistory::GetCandidates() const {
+  std::vector<EyeCandidate> out;
 
   if (this->m_count_ < 1) {
     return out;
@@ -813,49 +869,108 @@ Shared::ShootHistory::EyeCandidates Shared::ShootHistory::GetCandidates()
   constexpr auto kRingSlot{0.03125f};
 
   const auto newest_valid_tick = this->m_client_tick_ - this->m_lerp_ticks_int_;
-  const auto oldest_valid_tick =
-      this->m_client_tick_ - this->m_lerp_ticks_int_ - 1;
 
-  auto first_valid{-1};
-  auto last_valid{-1};
+  const auto make_candidate = [&](const RingEntry& entry) {
+    EyeCandidate candidate{};
+    candidate.position = entry.position;
+    candidate.player_tick = entry.tick;
+    candidate.player_frac = entry.fraction + kRingSlot;
+    candidate.lerp_ticks_int = this->m_lerp_ticks_int_;
+    candidate.lerp_ticks_frac = this->m_lerp_ticks_frac_;
+    return candidate;
+  };
 
-  for (auto i = 0; i < this->m_count_; ++i) {
-    const auto t = this->m_entries_[i].tick;
-    if (t > newest_valid_tick || t < oldest_valid_tick) {
-      continue;
+  const auto& lagcomp = settings::g_combat.m_lagcomp;
+
+  if (!lagcomp.self_backtrack.value) {
+    auto first_valid{-1};
+    auto last_valid{-1};
+
+    for (auto i = 0; i < this->m_count_; ++i) {
+      const auto t = this->m_entries_[i].tick;
+      if (t > newest_valid_tick || t < newest_valid_tick - 1) {
+        continue;
+      }
+
+      if (first_valid == -1) {
+        first_valid = i;
+      }
+
+      last_valid = i;
     }
 
-    if (first_valid == -1) {
-      first_valid = i;
+    if (last_valid == -1) {
+      return out;
     }
 
-    last_valid = i;
-  }
+    const auto& newest = this->m_entries_[last_valid];
+    out.push_back(make_candidate(newest));
 
-  if (last_valid == -1) {
+    if (first_valid != last_valid) {
+      const auto& oldest = this->m_entries_[first_valid];
+      const auto delta = oldest.position - newest.position;
+
+      if (delta.x * delta.x + delta.y * delta.y + delta.z * delta.z >= 4.0f) {
+        out.push_back(make_candidate(oldest));
+      }
+    }
+
     return out;
   }
 
-  const auto& newest = this->m_entries_[last_valid];
-  out.entries[0].position = newest.position;
-  out.entries[0].player_tick = newest.tick;
-  out.entries[0].player_frac = newest.fraction + kRingSlot;
-  out.entries[0].lerp_ticks_int = this->m_lerp_ticks_int_;
-  out.entries[0].lerp_ticks_frac = this->m_lerp_ticks_frac_;
-  out.count = 1;
-
-  if (first_valid != last_valid) {
-    const auto& oldest = this->m_entries_[first_valid];
-    const auto delta = oldest.position - newest.position;
-
-    if (delta.x * delta.x + delta.y * delta.y + delta.z * delta.z >= 4.0f) {
-      out.entries[1].position = oldest.position;
-      out.entries[1].player_tick = oldest.tick;
-      out.entries[1].player_frac = oldest.fraction + kRingSlot;
-      out.entries[1].lerp_ticks_int = this->m_lerp_ticks_int_;
-      out.entries[1].lerp_ticks_frac = this->m_lerp_ticks_frac_;
-      out.count = 2;
+  auto current{-1};
+  for (auto i = 0; i < this->m_count_; ++i) {
+    if (this->m_entries_[i].tick <= newest_valid_tick) {
+      current = i;
     }
+  }
+
+  if (current == -1) {
+    return out;
+  }
+
+  const auto& newest = this->m_entries_[current];
+  out.push_back(make_candidate(newest));
+
+  // The server can only rewind the victim inside its own lag compensation
+  // window, and the shoot position history only holds so many ticks.
+  const auto window = std::min(Lagcomp::BudgetTicks(), this->SpanTicks());
+  const auto max_ticks =
+      std::clamp(lagcomp.max_self_backtrack_ticks.value, 1, 32);
+  const auto limit = std::min(window, max_ticks);
+
+  if (limit <= 0) {
+    return out;
+  }
+
+  const auto min_distance =
+      std::max(lagcomp.min_self_backtrack_distance.value, 0.0f);
+  const auto min_distance_sq = min_distance * min_distance;
+
+  for (auto i = current - 1; i >= 0; --i) {
+    const auto& entry = this->m_entries_[i];
+    const auto delta_ticks = newest.tick - entry.tick;
+
+    if (delta_ticks <= 0) {
+      continue;
+    }
+
+    if (delta_ticks > limit) {
+      break;
+    }
+
+    const auto delta = entry.position - newest.position;
+    if (delta.x * delta.x + delta.y * delta.y + delta.z * delta.z <
+        min_distance_sq) {
+      continue;
+    }
+
+    if (out.size() >
+        static_cast<std::size_t>(Rage::kMaxSelfBacktrackCandidates)) {
+      break;
+    }
+
+    out.push_back(make_candidate(entry));
   }
 
   return out;
@@ -1180,6 +1295,24 @@ math::Vector3 Shared::GetInterpolatedShootPosition(std::uintptr_t local_pawn,
       cstypes::TickFraction{newest_tick, newest_frac}.SubtractValue(interp *
                                                                     64.0f);
 
+  return this->GetShootPositionAtTick(target.tick, target.frac);
+}
+
+math::Vector3 Shared::GetShootPositionAtTick(int tick, float frac) const {
+  const auto ws = this->m_ctx_.weapon_services;
+  if (!ws) {
+    return this->GetShootPosition();
+  }
+
+  const auto head = memory::Read<int>(ws + 872);
+  const auto count = memory::Read<int>(ws + 876);
+
+  if (count < 2) {
+    return this->GetShootPosition();
+  }
+
+  const cstypes::TickFraction target{tick, frac};
+
   for (auto i = 0; i < count - 1; ++i) {
     const auto idx_a = (head + static_cast<std::size_t>(i)) % 32;
     const auto idx_b = (head + static_cast<std::size_t>(i) + 1) % 32;
@@ -1384,6 +1517,48 @@ float Shared::GetInaccuracyAtVelocity(std::uintptr_t local_pawn,
   return inaccuracy;
 }
 
+float Shared::GetInaccuracyAtStance(std::uintptr_t local_pawn,
+                                    const math::Vector3& velocity,
+                                    bool standing) const {
+  if (!standing) {
+    return this->GetInaccuracyAtVelocity(local_pawn, velocity);
+  }
+
+  const auto flags_offset = SCHEMA("C_BaseEntity", "m_fFlags"_hash);
+  const auto old_flags = memory::Read<std::uint32_t>(local_pawn + flags_offset);
+
+  if ((old_flags & cstypes::entity_flags::kDucking) == 0) {
+    return this->GetInaccuracyAtVelocity(local_pawn, velocity);
+  }
+
+  memory::Write(
+      local_pawn + flags_offset,
+      old_flags & ~static_cast<std::uint32_t>(cstypes::entity_flags::kDucking));
+
+  const auto inaccuracy = this->GetInaccuracyAtVelocity(local_pawn, velocity);
+
+  memory::Write(local_pawn + flags_offset, old_flags);
+
+  return inaccuracy;
+}
+
+float Shared::GetVDataFloat(std::uint32_t field_offset) const {
+  if (!this->m_ctx_.weapon_vdata) {
+    return 0.0f;
+  }
+
+  const auto mode = memory::Read<int>(
+      this->m_ctx_.weapon + SCHEMA("C_CSWeaponBase", "m_weaponMode"_hash));
+
+  // The engine reads the firing mode float as base + 4 * mode and falls back
+  // to the primary value for every mode outside the two stored slots.
+  const auto stride =
+      (mode >= 0 && mode < 2) ? mode * static_cast<int>(sizeof(float)) : 0;
+
+  return memory::Read<float>(this->m_ctx_.weapon_vdata + field_offset +
+                             static_cast<std::uint32_t>(stride));
+}
+
 float Shared::GetAirInaccuracy(float vertical_speed, float jump_initial,
                                float jump_apex) const {
   constexpr auto kSqrtThreshold{17.37795666f};
@@ -1434,10 +1609,10 @@ bool Shared::CanShoot(systems::Input::Usercmd* cmd,
          client_tick >= next_primary;
 }
 
-bool Shared::IsMaxAccuracy(float inaccuracy) const {
+bool Shared::IsMaxAccuracy(float inaccuracy, bool standing) const {
   const auto& prestate = systems::g_prediction.Pre();
-  const auto on_ground = (prestate.flags & 1) != 0;
-  const auto is_ducking = (prestate.flags & 4) != 0;
+  const auto on_ground =
+      (prestate.flags & cstypes::entity_flags::kOnGround) != 0;
   const auto speed = prestate.networked_velocity.Length2d();
 
   if (on_ground) {
@@ -1452,10 +1627,9 @@ bool Shared::IsMaxAccuracy(float inaccuracy) const {
 
       // Firing-mode values contain separate primary and scoped floats.
       const auto accuracy_offset =
-          is_ducking ? SCHEMA("CCSWeaponBaseVData", "m_flInaccuracyCrouch"_hash)
-                     : SCHEMA("CCSWeaponBaseVData", "m_flInaccuracyStand"_hash);
-      const auto minimum_inaccuracy = memory::Read<float>(
-          this->m_ctx_.weapon_vdata + accuracy_offset + sizeof(float));
+          standing ? SCHEMA("CCSWeaponBaseVData", "m_flInaccuracyStand"_hash)
+                   : SCHEMA("CCSWeaponBaseVData", "m_flInaccuracyCrouch"_hash);
+      const auto minimum_inaccuracy = this->GetVDataFloat(accuracy_offset);
       constexpr auto kAccuracyTolerance{0.0001f};
       return std::isfinite(minimum_inaccuracy) && minimum_inaccuracy > 0.0f &&
              inaccuracy <= minimum_inaccuracy + kAccuracyTolerance;

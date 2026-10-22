@@ -1,6 +1,7 @@
 #include "pch/pch.h"
 
 #include "core/features/features.h"
+#include "core/rendering/rendering.h"
 #include "core/systems/systems.h"
 #include "protection/game_addresses.h"
 #include "utilities/addresses/addresses.h"
@@ -77,12 +78,15 @@ void Misc::Antiaim::OnCreateMove(systems::Input::Usercmd* cmd) {
 
   this->m_should_correct_ = true;
 
-  this->CorrectMovement(cmd);
+  if (CONVAR("sv_subtick_movement_view_angles")->Get<bool>()) {
+    this->CorrectMovementYawDelta(cmd);
+  } else {
+    this->CorrectMovement(cmd);
+  }
 }
 
 void Misc::Antiaim::OnRender(xdraw::draw_list& draw_list) const {
-  if (!settings::g_combat.m_antiaim.enabled.value ||
-      !settings::g_combat.m_antiaim.direction_indicator.value) {
+  if (!settings::g_combat.m_antiaim.enabled.value) {
     return;
   }
 
@@ -95,6 +99,28 @@ void Misc::Antiaim::OnRender(xdraw::draw_list& draw_list) const {
   }
 
   const auto origin = systems::g_frame_data.Origin();
+
+#if defined(DEV)
+  {
+    const auto feet = systems::g_view.Project(origin);
+    if (systems::g_view.ProjectionValid(feet)) {
+      xdraw::push_font(
+          rendering::g_fonts.smallest_pixel7[rendering::Fonts::Size::kNormal]);
+
+      const auto text =
+          std::format("head yaw offset {:.1f}", this->m_head_offset_);
+      const auto [text_w, text_h] = xdraw::measure_text(text);
+
+      draw_list.text(feet.x - text_w * 0.5f, feet.y + 30.0f, text,
+                     xdraw::color{255, 255, 255, 220},
+                     xdraw::text_style::outlined);
+    }
+  }
+#endif
+
+  if (!settings::g_combat.m_antiaim.direction_indicator.value) {
+    return;
+  }
   const auto aa_yaw_rad =
       this->m_indicator_yaw_ * (std::numbers::pi_v<float> / 180.0f);
 
@@ -201,6 +227,42 @@ float Misc::Antiaim::GetPitch(float view_pitch) {
     default:
       return view_pitch;
   }
+}
+
+std::optional<float> Misc::Antiaim::MeasureHeadDirection(
+    const systems::Local::Snapshot& local) const {
+  if (!local.pawn) {
+    return std::nullopt;
+  }
+
+  const auto game_scene_node = memory::Read<std::uintptr_t>(
+      local.pawn + SCHEMA("C_BaseEntity", "m_pGameSceneNode"_hash));
+  if (!game_scene_node) {
+    return std::nullopt;
+  }
+
+  const auto hitbox_set = systems::g_hitboxes.Query(game_scene_node, false);
+  if (hitbox_set.count < 1) {
+    return std::nullopt;
+  }
+
+  const auto head_bone =
+      systems::g_bones.Get(local.pawn, cstypes::bone_ids::kHead);
+  if (head_bone.position.LengthSqr() < 1.0f) {
+    return std::nullopt;
+  }
+
+  const auto& head_hb = hitbox_set.entries[0];
+  const auto offset =
+      head_bone.rotation.RotateVector((head_hb.mins + head_hb.maxs) * 0.5f);
+
+  const math::Vector2 horizontal{offset.x, offset.y};
+  if (horizontal.LengthSqr() < 4.0f) {
+    return std::nullopt;
+  }
+
+  return std::atan2f(horizontal.y, horizontal.x) *
+         (180.0f / std::numbers::pi_v<float>);
 }
 
 float Misc::Antiaim::GetYaw(const math::Vector3& view_angles,
@@ -405,16 +467,6 @@ float Misc::Antiaim::GetYaw(const math::Vector3& view_angles,
   if (const auto target_yaw = pick_target_yaw()) {
     base_yaw = *target_yaw;
   }
-
-  auto indicator = base_yaw;
-  if (this->m_yaw_side_ == -1) {
-    indicator -= 90.0f;
-  } else if (this->m_yaw_side_ == 1) {
-    indicator += 90.0f;
-  }
-
-  this->m_indicator_yaw_ = indicator;
-
   auto yaw = base_yaw;
   if (this->m_yaw_side_ == -1) {
     yaw -= 90.0f;
@@ -422,8 +474,21 @@ float Misc::Antiaim::GetYaw(const math::Vector3& view_angles,
     yaw += 90.0f;
   }
 
-  if (settings::g_combat.m_antiaim.auto_yaw_adjust.value)
-    yaw += 33.0f;  // thx saphy
+  this->m_head_offset_ = 0.0f;
+
+  if (settings::g_combat.m_antiaim.auto_yaw_adjust.value &&
+      settings::g_combat.m_antiaim.pitch !=
+          settings::Combat::Antiaim::PitchMode::kNone) {
+    if (const auto head_direction = this->MeasureHeadDirection(local)) {
+      auto correction = math::helpers::NormalizeYaw(base_yaw - *head_direction);
+      correction = std::clamp(correction, -90.0f, 90.0f);
+
+      this->m_head_offset_ = correction;
+      yaw += correction;
+    }
+  }
+
+  this->m_indicator_yaw_ = yaw;
 
   return yaw;
 }
@@ -498,11 +563,53 @@ void Misc::Antiaim::CorrectMovement(systems::Input::Usercmd* cmd) {
   }
 }
 
+}
+
+void Misc::Antiaim::CorrectMovementYawDelta(systems::Input::Usercmd* cmd) {
+  if (!this->m_should_correct_) {
+    return;
+  }
+
+  this->m_should_correct_ = false;
+
+  const auto base = cmd->csgo_user_cmd.MutableBase();
+  if (!base) {
+    return;
+  }
+
+  const auto angles = base->Viewangles();
+  if (!angles) {
+    return;
+  }
+
+  const auto real_yaw = this->m_old_angles_.y;
+  const auto fake_yaw = this->m_modified_angles_.y;
+
+  auto yaw_delta = real_yaw - fake_yaw;
+  math::helpers::NormalizeAngle(yaw_delta);
+
+  if (std::fabsf(yaw_delta) < 0.01f) {
+    return;
+  }
+
+  const auto step = systems::g_input.AcquireSubtickStepSorted(
+      base->MutableSubtickMoves(), 1.0f / 64.0f);
+  if (!step) {
+    return;
+  }
+
+  step->SetYawDelta(yaw_delta);
+  step->SetPitchDelta(0.0f);
+}
+
 bool Misc::Antiaim::IsNearLadder(std::uintptr_t local_pawn) const {
   return false;  // ill do this lader.
 }
 
 namespace {
+
+constexpr auto kDuckStandThreshold{0.75f};
+constexpr auto kMaxPeekTicks{32};
 
 math::Vector3 QuickpeekGroundSnap(std::uintptr_t skip_pawn,
                                   const math::Vector3& feet_pos) {
@@ -521,42 +628,295 @@ math::Vector3 QuickpeekGroundSnap(std::uintptr_t skip_pawn,
 
 }  // namespace
 
-void Misc::Duckpeek::OnCreateMove(systems::Input::Usercmd* cmd) {
-  this->m_fake_stand_active_ = false;
+float Misc::Duckpeek::GetDuckAmount(std::uintptr_t local_pawn) const {
+  const auto movement_services = memory::Read<std::uintptr_t>(
+      local_pawn + SCHEMA("C_BasePlayerPawn", "m_pMovementServices"_hash));
 
-  if (!cmd || !settings::g_combat.m_duckpeek.enabled.value) {
-    this->m_was_active_ = false;
+  if (!movement_services) {
+    return 0.0f;
+  }
+
+  return memory::Read<float>(
+      movement_services +
+      SCHEMA("CCSPlayer_MovementServices", "m_flDuckAmount"_hash));
+}
+
+float Misc::Duckpeek::GetStandRate(std::uintptr_t local_pawn) const {
+  const auto movement_services = memory::Read<std::uintptr_t>(
+      local_pawn + SCHEMA("C_BasePlayerPawn", "m_pMovementServices"_hash));
+
+  if (!movement_services) {
+    return 0.0f;
+  }
+
+  const auto duck_speed = memory::Read<float>(
+      movement_services +
+      SCHEMA("CCSPlayer_MovementServices", "m_flDuckSpeed"_hash));
+
+  return std::max(1.5f, duck_speed) * cstypes::kTickInterval;
+}
+
+bool Misc::Duckpeek::PlannedShotIsStanding(std::uintptr_t local_pawn) const {
+  const auto& cfg = settings::g_combat.m_duckpeek;
+
+  switch (cfg.shot_timing.value) {
+    case settings::Combat::Duckpeek::ShotTiming::kFullStand:
+      return true;
+    case settings::Combat::Duckpeek::ShotTiming::kFixedDelay: {
+      const auto delay = std::max(0, cfg.shot_delay.value);
+      const auto ticks_left = std::max(0, delay - this->m_peek_ticks_);
+      const auto amount =
+          this->GetDuckAmount(local_pawn) -
+          this->GetStandRate(local_pawn) * static_cast<float>(ticks_left);
+      return amount <= kDuckStandThreshold;
+    }
+    case settings::Combat::Duckpeek::ShotTiming::kReleaseTick:
+    default:
+      return false;
+  }
+}
+
+int Misc::Duckpeek::GetTicksUntilShot(std::uintptr_t local_pawn) const {
+  const auto& cfg = settings::g_combat.m_duckpeek;
+
+  switch (cfg.shot_timing.value) {
+    case settings::Combat::Duckpeek::ShotTiming::kFullStand: {
+      const auto rate = this->GetStandRate(local_pawn);
+      if (rate <= 0.0f) {
+        return 1;
+      }
+
+      const auto amount = this->GetDuckAmount(local_pawn);
+      return static_cast<int>(std::ceil(amount / rate)) + 1;
+    }
+    case settings::Combat::Duckpeek::ShotTiming::kFixedDelay:
+      return std::max(0, cfg.shot_delay.value - this->m_peek_ticks_) + 1;
+    case settings::Combat::Duckpeek::ShotTiming::kReleaseTick:
+    default:
+      return 1;
+  }
+}
+
+math::Vector3 Misc::Duckpeek::PredictShotVelocity(
+    std::uintptr_t local_pawn, const math::Vector3& velocity) const {
+  const auto ticks = this->GetTicksUntilShot(local_pawn);
+
+  auto direction = velocity;
+  direction.z = 0.0f;
+  const auto initial_speed = direction.Length2d();
+
+  if (ticks <= 0 || initial_speed < 1.0f) {
+    return velocity;
+  }
+
+  const auto movement_services = memory::Read<std::uintptr_t>(
+      local_pawn + SCHEMA("C_BasePlayerPawn", "m_pMovementServices"_hash));
+  if (!movement_services) {
+    return velocity;
+  }
+
+  const auto max_move_speed =
+      memory::Read<float>(movement_services + SCHEMA("CPlayer_MovementServices",
+                                                     "m_flMaxspeed"_hash));
+  const auto duck_amount = memory::Read<float>(
+      movement_services +
+      SCHEMA("CCSPlayer_MovementServices", "m_flDuckAmount"_hash));
+  const auto duck_speed = memory::Read<float>(
+      movement_services +
+      SCHEMA("CCSPlayer_MovementServices", "m_flDuckSpeed"_hash));
+
+  const auto stand_rate = std::max(1.5f, duck_speed) * cstypes::kTickInterval;
+  const auto& prestate = systems::g_prediction.Pre();
+  const auto input =
+      std::min(1.0f, std::sqrt(prestate.last_movement_impulses.x *
+                                   prestate.last_movement_impulses.x +
+                               prestate.last_movement_impulses.y *
+                                   prestate.last_movement_impulses.y));
+
+  const auto sv_friction = CONVAR("sv_friction")->Get<float>();
+  const auto sv_stopspeed = CONVAR("sv_stopspeed")->Get<float>();
+  const auto sv_accelerate = CONVAR("sv_accelerate")->Get<float>();
+  const auto surface_friction = prestate.surface_friction;
+
+  auto speed = initial_speed;
+
+  for (auto i = 0; i < ticks; ++i) {
+    const auto amount =
+        std::max(0.0f, duck_amount - stand_rate * static_cast<float>(i + 1));
+    const auto duck_scale = 1.0f - 0.66f * amount;
+    const auto wish_speed =
+        std::min(max_move_speed, input * max_move_speed * duck_scale);
+
+    const auto control = std::max(speed, sv_stopspeed);
+    speed = std::max(speed - sv_friction * surface_friction * control *
+                                 cstypes::kTickInterval,
+                     0.0f);
+
+    const auto addspeed = wish_speed - speed;
+    if (addspeed > 0.0f) {
+      auto accel_speed = std::min(
+          sv_accelerate * wish_speed * cstypes::kTickInterval, addspeed);
+      accel_speed = std::min(accel_speed,
+                             wish_speed * wish_speed * cstypes::kTickInterval);
+      speed += accel_speed;
+    }
+  }
+
+  return direction.Normalized() * speed;
+}
+
+Misc::Duckpeek::ShotDecision Misc::Duckpeek::PrepareShot(
+    bool has_target, bool shot_viable, std::uintptr_t local_pawn) {
+  const auto& cfg = settings::g_combat.m_duckpeek;
+
+  if (this->m_state_ == State::kRecovering) {
+    // The recovery window keeps the player standing after the peek shot.
+    // It must not block further shots.
+    return ShotDecision::kFire;
+  }
+
+  if (cfg.shot_timing.value ==
+      settings::Combat::Duckpeek::ShotTiming::kReleaseTick) {
+    if (this->m_state_ != State::kIdle) {
+      // The release tick already passed without a shot.
+      this->Abort();
+      return ShotDecision::kHold;
+    }
+
+    if (!shot_viable) {
+      return ShotDecision::kHold;
+    }
+
+    this->m_state_ = State::kPeeking;
+    this->m_peek_ticks_ = 0;
+    this->m_release_armed_ = true;
+    return ShotDecision::kFirePeek;
+  }
+
+  if (this->m_state_ == State::kIdle) {
+    if (!has_target) {
+      return ShotDecision::kFire;
+    }
+
+    this->m_state_ = State::kPeeking;
+    this->m_peek_ticks_ = 0;
+    this->m_release_armed_ = true;
+  }
+
+  const auto ready =
+      cfg.shot_timing.value ==
+              settings::Combat::Duckpeek::ShotTiming::kFullStand
+          ? this->GetDuckAmount(local_pawn) <= 0.0f
+          : this->m_peek_ticks_ >= std::max(0, cfg.shot_delay.value);
+
+  if (!ready || !shot_viable) {
+    return ShotDecision::kHold;
+  }
+
+  return ShotDecision::kFirePeek;
+}
+
+void Misc::Duckpeek::OnFired() noexcept {
+  this->m_state_ = State::kRecovering;
+  this->m_reduck_ticks_ =
+      std::max(0, settings::g_combat.m_duckpeek.reduck_delay.value);
+}
+
+void Misc::Duckpeek::OnShotSkipped() noexcept {
+  if (this->m_state_ != State::kPeeking) {
+    return;
+  }
+
+  if (settings::g_combat.m_duckpeek.shot_timing.value ==
+      settings::Combat::Duckpeek::ShotTiming::kReleaseTick) {
+    this->Abort();
+  }
+}
+
+void Misc::Duckpeek::OnTargetLost() noexcept {
+  if (this->m_state_ == State::kPeeking) {
+    this->Abort();
+  }
+}
+
+void Misc::Duckpeek::Abort() noexcept {
+  this->m_state_ = State::kRecovering;
+  this->m_reduck_ticks_ = 0;
+  this->m_release_armed_ = false;
+}
+
+void Misc::Duckpeek::Reset() noexcept {
+  this->m_state_ = State::kIdle;
+  this->m_peek_ticks_ = 0;
+  this->m_reduck_ticks_ = 0;
+  this->m_release_armed_ = false;
+}
+
+void Misc::Duckpeek::OnCreateMove(systems::Input::Usercmd* cmd) {
+  if (!cmd) {
+    return;
+  }
+
+  const auto& cfg = settings::g_combat.m_duckpeek;
+
+  if (!cfg.enabled.value) {
+    this->Reset();
     return;
   }
 
   const auto local = systems::g_local.Get();
   if (!local.is_alive || !local.pawn || systems::g_local.IsInCinematic() ||
       systems::g_local.IsInTimeFreeze()) {
-    this->m_was_active_ = false;
+    this->Reset();
     return;
   }
 
-  this->m_was_active_ = true;
+  const auto weapon_type = g_shared.Ctx().weapon_type;
+  if (weapon_type < cstypes::weapon_type::kPistol ||
+      weapon_type > cstypes::weapon_type::kLmg) {
+    this->Reset();
+    return;
+  }
 
-  if (g_rage.ShouldReleaseDuckForShot()) {
+  const auto on_ground = (systems::g_prediction.Pre().flags &
+                          cstypes::entity_flags::kOnGround) != 0;
+  if (!on_ground) {
+    this->Reset();
+    return;
+  }
+
+  switch (this->m_state_) {
+    case State::kIdle:
+      break;
+    case State::kPeeking:
+      ++this->m_peek_ticks_;
+      if (this->m_peek_ticks_ > kMaxPeekTicks) {
+        this->Abort();
+      }
+      break;
+    case State::kRecovering:
+      if (this->m_reduck_ticks_ > 0) {
+        --this->m_reduck_ticks_;
+      } else {
+        this->m_state_ = State::kIdle;
+      }
+      break;
+  }
+
+  if (this->m_release_armed_) {
+    this->m_release_armed_ = false;
     cmd->buttons.value &= ~cstypes::command_buttons::kInDuck;
-    this->m_fake_stand_active_ = true;
     return;
   }
 
-  cmd->buttons.value |= cstypes::command_buttons::kInDuck;
-
-  if (g_rage.DuckpeekWantsReduck()) {
-    g_rage.ClearDuckpeekReduck();
+  if (this->m_state_ == State::kPeeking ||
+      this->m_state_ == State::kRecovering) {
+    cmd->buttons.value &= ~cstypes::command_buttons::kInDuck;
+    return;
   }
-}
 
-void Misc::Duckpeek::OnOverrideView(std::uintptr_t view_setup) {
-  (void)view_setup;
-
-  if (!settings::g_combat.m_duckpeek.enabled.value) {
-    this->m_was_active_ = false;
-    this->m_fake_stand_active_ = false;
+  if (cfg.force_duck.value) {
+    cmd->buttons.value |= cstypes::command_buttons::kInDuck;
   }
 }
 
@@ -920,12 +1280,12 @@ float Misc::Autostop::GetEffectiveAccelBase(std::uintptr_t local_pawn,
   const auto max_speed_base =
       memory::Read<float>(movement_services + SCHEMA("CPlayer_MovementServices",
                                                      "m_flMaxspeed"_hash));
-  const auto is_ducked = (flags & 4) != 0;
-  const auto ducking_state =
-      memory::Read<bool>(movement_services +
-                         SCHEMA("CPlayer_MovementServices", "m_bDucking"_hash));
+  const auto is_ducked = (flags & cstypes::entity_flags::kDucking) != 0;
+  const auto duck_amount = memory::Read<float>(
+      movement_services +
+      SCHEMA("CCSPlayer_MovementServices", "m_flDuckAmount"_hash));
   const auto is_scoped = g_shared.Ctx().is_scoped;
-  const auto is_ducking = is_ducked || ducking_state;
+  const auto is_ducking = is_ducked || duck_amount > 0.0f;
   const auto v19 = std::fmaxf(250.0f, max_speed_base);
 
   auto friction_scale{1.0f};

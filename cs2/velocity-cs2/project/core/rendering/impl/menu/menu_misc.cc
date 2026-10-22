@@ -297,6 +297,16 @@ void Menu::DrawMisc(float group_w) const {
         xui::end_popup();
       }
 
+      xui::checkbox("slidewalk", mov.m_slidewalk.enabled);
+
+      if (xui::begin_popup("##slidewalk_popup", 260.0f)) {
+        static const char* slidewalk_modes[] = {"movement", "render"};
+        xui::combo("mode##sw", mov.m_slidewalk.mode.value, slidewalk_modes, 2);
+        xui::slider_float("angle##sw", mov.m_slidewalk.angle, -180.0f, 180.0f,
+                          "%.0f");
+        xui::end_popup();
+      }
+
       xui::end_child();
     }
 

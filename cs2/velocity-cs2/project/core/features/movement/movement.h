@@ -93,6 +93,11 @@ class Slowwalk {
   void OnCreateMove(systems::Input::Usercmd* cmd) const;
 };
 
+class Slidewalk {
+ public:
+  void OnCreateMove(systems::Input::Usercmd* cmd) const;
+};
+
 class TestStrafer {
  public:
   void OnCreateMove(systems::Input::Usercmd* cmd);

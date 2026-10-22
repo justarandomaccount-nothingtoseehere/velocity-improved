@@ -236,10 +236,27 @@ struct Combat {
   } m_quickpeek{};
 
   struct Duckpeek {
+    enum class ShotTiming : std::uint8_t {
+      kReleaseTick,
+      kFullStand,
+      kFixedDelay,
+    };
+
     xui::setting enabled{false,
                          {VK_LMENU, xui::bind_mode::hold_on},
                          "duck peek",
                          "peek assistance"};
+
+    config::enm<ShotTiming> shot_timing{ShotTiming::kReleaseTick,
+                                        "peek assistance", "duck peek timing"};
+    config::val<int> shot_delay{2, "peek assistance", "duck peek delay"};
+    config::val<int> hitchance{0, "peek assistance", "duck peek hitchance"};
+    config::val<int> min_damage{0, "peek assistance", "duck peek min damage"};
+    config::val<float> max_distance{2500.0f, "peek assistance",
+                                    "duck peek max distance"};
+    config::val<int> reduck_delay{2, "peek assistance",
+                                  "duck peek reduck delay"};
+    xui::setting force_duck{true, {}, "force duck", "peek assistance"};
   } m_duckpeek{};
 
   struct LagcompSettings {
@@ -247,6 +264,11 @@ struct Combat {
     xui::setting extrapolation{true, {}, "extrapolation", "ragebot"};
     config::val<int> max_extrapolate_ticks{8, "ragebot",
                                            "max extrapolate ticks"};
+    xui::setting self_backtrack{false, {}, "self backtrack", "ragebot"};
+    config::val<int> max_self_backtrack_ticks{8, "ragebot",
+                                              "max self backtrack ticks"};
+    config::val<float> min_self_backtrack_distance{
+        16.0f, "ragebot", "min self backtrack distance"};
   } m_lagcomp{};
 
   struct Zeusbot {
@@ -256,7 +278,6 @@ struct Combat {
   } m_zeusbot{};
 
   struct Autos {
-    xui::setting revolver{true, {}, "auto revolver", "autos"};
     xui::setting scope{true, {}, "auto scope", "autos"};
   } m_autos{};
 
@@ -1521,6 +1542,14 @@ struct Movement {
   xui::setting slowwalk{
       false, {'P', xui::bind_mode::hold_on}, "slowwalk", "movement"};
   config::val<float> slowwalk_speed{33.0f, "movement", "slowwalk speed"};
+
+  struct Slidewalk {
+    enum class Mode : std::uint8_t { kMovement, kRender };
+
+    xui::setting enabled{false, {}, "slidewalk", "movement"};
+    config::enm<Mode> mode{Mode::kMovement, "movement", "slidewalk mode"};
+    config::val<float> angle{90.0f, "movement", "slidewalk angle"};
+  } m_slidewalk{};
 
   struct TestStrafer {
     xui::setting enabled{false, {}, "test strafer", "movement"};

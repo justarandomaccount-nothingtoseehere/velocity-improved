@@ -557,6 +557,7 @@ void __fastcall Cheat::CreateMove(std::uintptr_t thisptr, int slot,
 
       diag::SetExceptionPhase("create_move: post-combat movement");
       features::combat::g_misc.Duckpeek().OnCreateMove(current_cmd);
+      features::movement::g_slidewalk.OnCreateMove(current_cmd);
       features::movement::g_test_strafer.OnCreateMove(current_cmd);
       features::movement::g_airstrafe.OnCreateMove(current_cmd);
       features::misc::g_projectile_trajectory.OnCreateMove(current_cmd);
@@ -822,7 +823,6 @@ void __fastcall Cheat::OverrideView(std::uintptr_t thisptr,
 
   features::misc::g_camera.OnOverrideView(view_setup);
   features::misc::g_removals.OnOverrideView(view_setup);
-  features::combat::g_misc.Duckpeek().OnOverrideView(view_setup);
 }
 
 void __fastcall Cheat::UpdateFovSensitivity(std::uintptr_t thisptr) {

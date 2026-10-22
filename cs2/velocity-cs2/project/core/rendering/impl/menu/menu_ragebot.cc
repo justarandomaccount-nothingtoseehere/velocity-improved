@@ -49,6 +49,15 @@ void Menu::DrawRagebot(float group_w) const {
                     "%d tick(s)");
     xui::slider_float("max fov", wg.max_fov, 1.0f, 180.0f, "%.0f°");
 
+    xui::checkbox("self backtrack", lg.self_backtrack);
+    if (xui::begin_popup("##selfbt_popup", 220.0f)) {
+      xui::slider_int("max ticks##sb", lg.max_self_backtrack_ticks, 1, 16,
+                      "%d tick(s)");
+      xui::slider_float("min distance##sb", lg.min_self_backtrack_distance,
+                        0.0f, 128.0f, "%.0f u");
+      xui::end_popup();
+    }
+
     xui::slider_int("hit chance", wg.hitchance, 25, 100, "%d%%");
     xui::slider_int("min damage", wg.min_damage, 5, 125, "%d");
     /*xui::slider_int( "max backtrack", s.m_lagcomp.max_backtrack_ticks, 1, 16,
@@ -106,8 +115,6 @@ void Menu::DrawRagebot(float group_w) const {
   }
 
   if (xui::begin_child("##ragebot_otherbots", col_w)) {
-    xui::checkbox("auto revolver", autos.revolver);
-
     xui::checkbox("zeusbot", zb.enabled);
     if (xui::begin_popup("##zb_settings", 220.0f)) {
       xui::slider_float("max fov##zb", zb.max_fov, 1, 180, "%.0f°");
@@ -133,6 +140,19 @@ void Menu::DrawRagebot(float group_w) const {
     }
 
     xui::checkbox("duck peek", dp.enabled);
+    if (xui::begin_popup("##dp_settings", 240.0f)) {
+      static const char* dp_timings[] = {"release tick", "full stand",
+                                         "fixed delay"};
+      xui::combo("timing##dp", dp.shot_timing.value, dp_timings, 3);
+      xui::slider_int("delay##dp", dp.shot_delay, 0, 16, "%d");
+      xui::slider_int("hit chance##dp", dp.hitchance, 0, 100, "%d");
+      xui::slider_int("min damage##dp", dp.min_damage, 0, 130, "%d");
+      xui::slider_float("max distance##dp", dp.max_distance, 100.0f, 5000.0f,
+                        "%.0f");
+      xui::slider_int("re-duck delay##dp", dp.reduck_delay, 0, 32, "%d");
+      xui::checkbox("force duck##dp", dp.force_duck);
+      xui::end_popup();
+    }
 
     xui::end_child();
   }

@@ -15,17 +15,13 @@ void Rage::OnCreateMove(systems::Input::Usercmd* cmd) {
   this->UpdatePenetrationCrosshair(local);
 
   if (!ctx.valid) {
-    this->m_revolver_cock_ticks_ = 0;
+    this->m_revolver_holding_ = false;
+    this->m_revolver_press_tick_ = 0;
     return;
   }
 
   this->m_should_stop_ = false;
   this->m_firing_this_tick_ = false;
-
-  if (!settings::g_combat.m_duckpeek.enabled.value) {
-    this->m_release_duck_for_shot_ = false;
-    this->m_duckpeek_reduck_ = false;
-  }
 
   if (this->m_zeus_fired_) {
     this->m_zeus_fired_ = false;
@@ -53,7 +49,8 @@ void Rage::OnCreateMove(systems::Input::Usercmd* cmd) {
                        : is_taser ? settings::g_combat.m_zeusbot.enabled
                                   : settings::g_combat.m_ragebot.enabled;
   if (!enabled) {
-    this->m_revolver_cock_ticks_ = 0;
+    this->m_revolver_holding_ = false;
+    this->m_revolver_press_tick_ = 0;
     return;
   }
 
@@ -75,7 +72,10 @@ void Rage::OnCreateMove(systems::Input::Usercmd* cmd) {
              cstypes::item_definition_index::kWeaponR8Revolver) {
     this->AutoRevolver(cmd, aim_ctx, local);
   } else {
-    this->m_revolver_cock_ticks_ = 0;
+    this->m_revolver_holding_ = false;
+    this->m_revolver_press_tick_ = 0;
+
+    this->UpdateDoubletap(cmd);
 
     if (!g_shared.CanShoot(cmd, local.controller)) {
       return;
@@ -168,76 +168,73 @@ Rage::AimContext Rage::BuildContext(
   return out;
 }
 
-bool Rage::ProcessDoubletap(systems::Input::Usercmd* cmd,
-                            const systems::Local::Snapshot& local,
-                            bool charge_dt) {
-  const auto& shared_ctx = g_shared.Ctx();
-  const auto& config =
-      settings::g_combat.m_ragebot.GetGroup(shared_ctx.weapon_type);
-  if (!config.doubletap.value) {
+int Rage::DoubletapCycleTicks() const {
+  const auto& ctx = g_shared.Ctx();
+  if (!ctx.weapon_vdata) {
+    return 0;
+  }
+  const auto cycle_time = memory::Read<float>(
+      ctx.weapon_vdata + SCHEMA("CCSWeaponBaseVData", "m_flCycleTime"_hash));
+  return cstypes::TimeToTicks(cycle_time);
+}
+
+bool Rage::DoubletapBuildClaim(const math::Vector3& hit_position,
+                               int record_tick, math::Vector3& out_angle) {
+  const auto& ctx = g_shared.Ctx();
+  if (!ctx.weapon_services || record_tick <= 0) {
     return false;
   }
-
-  const auto base_cmd = cmd->csgo_user_cmd.MutableBase();
-  if (!base_cmd) {
+  const auto eye = g_shared.GetShootPositionAtTick(record_tick, 0.0f);
+  if (eye.LengthSqr() < 1.0f) {
     return false;
   }
+  out_angle = math::helpers::CalculateAngle(eye, hit_position);
+  m_dt_claim_tick_ = record_tick;
+  return true;
+}
 
-  const auto client_tick = base_cmd->ClientTick();
-  const auto next_primary = memory::Read<int>(
-      shared_ctx.weapon +
-      SCHEMA("C_BasePlayerWeapon", "m_nNextPrimaryAttackTick"_hash));
-  const auto tick_base = memory::Read<int>(
-      local.controller + SCHEMA("CBasePlayerController", "m_nTickBase"_hash));
+void Rage::UpdateDoubletap(systems::Input::Usercmd* cmd) {
+  const auto& ctx = g_shared.Ctx();
+  const auto& config = settings::g_combat.m_ragebot.GetGroup(ctx.weapon_type);
 
-  const auto can_attack =
-      client_tick >= next_primary &&
-      tick_base >= g_shared.LastShootTick() + 2 &&
-      !memory::Read<bool>(shared_ctx.weapon +
-                          SCHEMA("C_CSWeaponBase", "m_bInReload"_hash)) &&
-      memory::Read<int>(shared_ctx.weapon +
-                        SCHEMA("C_BasePlayerWeapon", "m_iClip1"_hash)) > 0;
-
-  const auto should_attack = can_attack && charge_dt;
-
-  if (should_attack) {
-    if (const auto subtick_moves = base_cmd->MutableSubtickMoves()) {
-      const auto old_size = subtick_moves->m_current_size;
-      const auto press = systems::g_input.AcquireSubtickStep(subtick_moves);
-      const auto release = systems::g_input.AcquireSubtickStep(subtick_moves);
-      if (press && release) {
-        press->SetButton(cstypes::command_buttons::kInAttack);
-        press->SetPressed(true);
-        press->SetWhen(0.0f);
-        press->SetAnalogForwardDelta(0.0f);
-        press->SetAnalogLeftDelta(0.0f);
-
-        release->SetButton(cstypes::command_buttons::kInAttack);
-        release->SetPressed(false);
-        release->SetWhen(std::nextafter(1.0f, 0.0f));
-        release->SetAnalogForwardDelta(0.0f);
-        release->SetAnalogLeftDelta(0.0f);
-
-        // The subtick release is the final state. Do not let the
-        // base command turn this pulse into a held attack.
-        cmd->buttons.value &= ~cstypes::command_buttons::kInAttack;
-        cmd->buttons.value_changed |= cstypes::command_buttons::kInAttack;
-        cmd->buttons.value_scroll &= ~cstypes::command_buttons::kInAttack;
-        cmd->csgo_user_cmd.SetAttack1StartHistoryIndex(-1);
-        return true;
-      }
-
-      // Do not leave a partial press in the command if allocation of
-      // the matching release failed.
-      subtick_moves->m_current_size = old_size;
-    }
+  if (!ctx.valid || !config.doubletap.value ||
+      ctx.item_def_idx == cstypes::item_definition_index::kWeaponR8Revolver) {
+    m_dt_state_ = DoubletapState::kIdle;
+    m_dt_charge_tick_ = -1;
+    m_dt_charged_ = false;
+    return;
   }
 
-  cmd->buttons.value &= ~cstypes::command_buttons::kInAttack;
-  cmd->buttons.value_changed |= cstypes::command_buttons::kInAttack;
-  cmd->buttons.value_scroll &= ~cstypes::command_buttons::kInAttack;
-  cmd->csgo_user_cmd.SetAttack1StartHistoryIndex(-1);
-  return false;
+  const auto now = ctx.current_tick;
+
+  if (m_dt_charge_tick_ < 0) {
+    m_dt_charge_tick_ = now;
+  }
+
+  const auto cycle = DoubletapCycleTicks();
+  if (!m_dt_charged_ && now - m_dt_charge_tick_ >= cycle * 2) {
+    m_dt_charged_ = true;
+  }
+
+  if (m_dt_state_ == DoubletapState::kRelease) {
+    cmd->buttons.value &= ~cstypes::command_buttons::kInAttack;
+    cmd->buttons.value_changed |= cstypes::command_buttons::kInAttack;
+    cmd->buttons.value_scroll &= ~cstypes::command_buttons::kInAttack;
+    m_dt_state_ = DoubletapState::kClaim;
+    m_dt_claim_tick_ = now + 1;
+    return;
+  }
+
+  if (m_dt_state_ == DoubletapState::kClaim &&
+      now > m_dt_claim_tick_ + DoubletapCycleTicks()) {
+    m_dt_state_ = DoubletapState::kIdle;
+  }
+}
+
+bool Rage::DoubletapBlocksShot() const noexcept {
+  return this->m_dt_state_ == DoubletapState::kRelease ||
+         (this->m_dt_state_ == DoubletapState::kClaim &&
+          this->m_dt_claim_tick_ > g_shared.Ctx().current_tick);
 }
 
 std::optional<Rage::StopPrediction> Rage::PredictStop(
@@ -324,7 +321,8 @@ std::optional<Rage::StopPrediction> Rage::PredictStop(
 }
 
 std::vector<Rage::Candidate> Rage::GatherCandidates(
-    const systems::Local::Snapshot& local, float max_distance_sq) const {
+    const systems::Local::Snapshot& local, float max_distance_sq,
+    int min_damage_override) const {
   const auto& shared_ctx = g_shared.Ctx();
   const auto players =
       systems::g_entities.GetByType(systems::Entities::Type::kPlayer);
@@ -460,6 +458,10 @@ std::vector<Rage::Candidate> Rage::GatherCandidates(
           settings::g_combat.m_ragebot.GetGroup(shared_ctx.weapon_type);
       c.min_damage =
           this->GetMinDamage(config, health, config.min_damage_override.value);
+
+      if (min_damage_override > 0) {
+        c.min_damage = static_cast<float>(min_damage_override);
+      }
     }
 
     out.push_back(c);
@@ -478,17 +480,20 @@ void Rage::RunGun(systems::Input::Usercmd* cmd, const AimContext& ctx,
   const auto& config =
       settings::g_combat.m_ragebot.GetGroup(shared_ctx.weapon_type);
 
-  const auto finish_doubletap = [&](bool charge_dt) {
-    if (config.doubletap.value &&
-        shared_ctx.item_def_idx !=
-            cstypes::item_definition_index::kWeaponR8Revolver) {
-      return this->ProcessDoubletap(cmd, local, charge_dt);
-    }
+  auto& duckpeek = g_misc.Duckpeek();
+  const auto& dp_cfg = settings::g_combat.m_duckpeek;
 
-    return false;
-  };
+  const auto duckpeek_active =
+      dp_cfg.enabled.value && ctx.on_ground &&
+      shared_ctx.weapon_type >= cstypes::weapon_type::kPistol &&
+      shared_ctx.weapon_type <= cstypes::weapon_type::kLmg;
 
-  auto candidates = this->GatherCandidates(local);
+  const auto peek_max_distance =
+      duckpeek_active ? dp_cfg.max_distance.value : 0.0f;
+  const auto peek_min_damage = duckpeek_active ? dp_cfg.min_damage.value : -1;
+
+  auto candidates = this->GatherCandidates(
+      local, peek_max_distance * peek_max_distance, peek_min_damage);
 
   {
     std::lock_guard lock(m_debug_mtx_);
@@ -496,40 +501,79 @@ void Rage::RunGun(systems::Input::Usercmd* cmd, const AimContext& ctx,
   }
 
   if (candidates.empty()) {
-    finish_doubletap(false);
+    duckpeek.OnTargetLost();
     return;
   }
 
+  const auto self_backtrack = settings::g_combat.m_lagcomp.self_backtrack.value;
+
   auto eye_candidates = g_shared.Sh().GetCandidates();
-  if (eye_candidates.count == 0) {
+  if (eye_candidates.empty()) {
     auto shoot_position = g_shared.GetShootPosition();
     if (shoot_position.LengthSqr() < 1.0f) {
       shoot_position = g_shared.GetEyePosition(local.pawn);
     }
 
-    eye_candidates.entries[0].position = shoot_position;
-    eye_candidates.entries[0].is_uninterpolated = true;
-    eye_candidates.count = 1;
+    Shared::ShootHistory::EyeCandidate fallback{};
+    fallback.position = shoot_position;
+    fallback.is_uninterpolated = true;
+    eye_candidates.push_back(fallback);
+  }
+
+  {
+    static auto last_selfbt_report = ULONGLONG{};
+    const auto now = GetTickCount64();
+    if (now - last_selfbt_report >= 1000) {
+      last_selfbt_report = now;
+      logging::console::Print(xs("[rage selfbt] history={}t budget={}t "
+                                 "unlag={}t candidates={}"),
+                              g_shared.Sh().SpanTicks(),
+                              Shared::Lagcomp::BudgetTicks(),
+                              Shared::Lagcomp::MaxUnlagTicks(),
+                              static_cast<int>(eye_candidates.size()));
+    }
   }
 
   const auto scan_from_eye_candidates = [&](const math::Vector3& eye_offset,
-                                            float inaccuracy) {
+                                            float inaccuracy,
+                                            float min_hitchance) {
     std::vector<ScanHit> hits_out;
-
-    for (auto i = 0; i < eye_candidates.count; ++i) {
-      const auto eye = eye_candidates.entries[i].position + eye_offset;
+    for (const auto& candidate : eye_candidates) {
+      const auto eye = candidate.position + eye_offset;
       auto hits = this->ScanPlayers(eye, inaccuracy, ctx, candidates, local);
       auto found_direct{false};
 
       for (auto& hit : hits) {
-        auto source_eye = eye_candidates.entries[i];
+        auto source_eye = candidate;
         source_eye.position = eye;
         hit.source_eye = source_eye;
         found_direct = found_direct || !hit.penetrated;
         hits_out.push_back(std::move(hit));
       }
 
-      if (found_direct) {
+      if (!found_direct) {
+        continue;
+      }
+
+      if (!self_backtrack) {
+        break;
+      }
+
+      // An older shoot origin only wins when the current one cannot deliver
+      // the requested hitchance.
+      auto reached{false};
+      for (const auto& hit : hits) {
+        if (hit.penetrated) {
+          continue;
+        }
+
+        if (this->EvaluateHitchance(hit, ctx, inaccuracy) >= min_hitchance) {
+          reached = true;
+          break;
+        }
+      }
+
+      if (reached) {
         break;
       }
     }
@@ -537,64 +581,92 @@ void Rage::RunGun(systems::Input::Usercmd* cmd, const AimContext& ctx,
     return hits_out;
   };
 
-  if (config.no_spread.value) {
-    shared_ctx.inaccuracy = g_shared.GetInaccuracy(false);
-    auto all_hits = scan_from_eye_candidates({}, shared_ctx.inaccuracy);
-
-    if (all_hits.empty()) {
-      finish_doubletap(false);
-      return;
-    }
-
-    const auto best = this->SelectBest(ctx, all_hits, shared_ctx.inaccuracy);
-    if (!best.valid) {
-      finish_doubletap(false);
-      return;
-    }
-
-    if (!allow_fire) {
-      return;
-    }
-
-    const auto subtick_attack = finish_doubletap(true);
-    this->FireGun(cmd, best, false, best.hit.source_eye.position, local,
-                  subtick_attack);
-    return;
-  }
-
-  const auto primary_eye = eye_candidates.entries[0].position;
-  const auto& prestate = systems::g_prediction.Pre();
-
-  // Current-shot selection is always based on current engine shoot-history.
-  auto current_hits = scan_from_eye_candidates({}, ctx.predicted_inaccuracy);
-  const auto best =
-      this->SelectBest(ctx, current_hits, ctx.predicted_inaccuracy);
-
   const auto needed_hc =
       config.hitchance_override.value
           ? static_cast<float>(config.hitchance_override_value) / 100.0f
           : static_cast<float>(config.hitchance) / 100.0f;
-  const auto duckpeek_active =
-      settings::g_combat.m_duckpeek.enabled.value && ctx.on_ground;
-  const auto is_ducked =
-      (prestate.flags & cstypes::entity_flags::kDucking) != 0;
 
-  const auto standing_inaccuracy = duckpeek_active
-                                       ? this->GetStandingInaccuracy(local, ctx)
-                                       : ctx.predicted_inaccuracy;
-  const auto standing_hc =
-      best.valid
-          ? (duckpeek_active
-                 ? this->EvaluateHitchance(best.hit, ctx, standing_inaccuracy)
-                 : best.hitchance)
-          : 0.0f;
+  const auto peek_hc = dp_cfg.hitchance.value > 0
+                           ? static_cast<float>(dp_cfg.hitchance.value) / 100.0f
+                           : needed_hc;
+  const auto effective_hc = duckpeek_active ? peek_hc : needed_hc;
 
-  const auto accurate = best.valid && standing_hc >= needed_hc;
-  const auto max_acc = g_shared.IsMaxAccuracy(standing_inaccuracy);
-  const auto force = best.valid && standing_hc > 0.0f &&
+  if (config.no_spread.value) {
+    shared_ctx.inaccuracy = g_shared.GetInaccuracy(false);
+    auto all_hits = scan_from_eye_candidates({}, shared_ctx.inaccuracy, 0.0f);
+
+    if (all_hits.empty()) {
+      duckpeek.OnTargetLost();
+      return;
+    }
+
+    const auto best =
+        this->SelectBest(ctx, all_hits, shared_ctx.inaccuracy, needed_hc);
+    if (!best.valid) {
+      duckpeek.OnTargetLost();
+      return;
+    }
+
+    if (!allow_fire) {
+      duckpeek.OnShotSkipped();
+      return;
+    }
+
+    auto peek_decision = Misc::Duckpeek::ShotDecision::kFire;
+    if (duckpeek_active) {
+      peek_decision = duckpeek.PrepareShot(true, true, local.pawn);
+
+      if (peek_decision == Misc::Duckpeek::ShotDecision::kHold) {
+        duckpeek.OnShotSkipped();
+        return;
+      }
+    }
+
+    if (this->DoubletapBlocksShot()) {
+      return;
+    }
+
+    this->FireGun(cmd, best, false, best.hit.source_eye.position, local);
+
+    if (peek_decision == Misc::Duckpeek::ShotDecision::kFirePeek) {
+      duckpeek.OnFired();
+    }
+
+    return;
+  }
+
+  const auto primary_eye = eye_candidates.front().position;
+
+  // The engine picks the stance cone from FL_DUCKING, which only clears
+  // once the duck amount reaches 0.75. Releasing the duck on the shot tick
+  // keeps that flag set, so the crouch cone is the correct estimate for it.
+  const auto peek_standing =
+      duckpeek_active && duckpeek.PlannedShotIsStanding(local.pawn);
+
+  // Releasing the duck lifts the wish speed cap, so the cone that applies
+  // at the shot tick is wider than the one the player has right now.
+  const auto peek_velocity =
+      duckpeek_active ? duckpeek.PredictShotVelocity(local.pawn, ctx.velocity)
+                      : ctx.velocity;
+
+  const auto shot_inaccuracy =
+      duckpeek_active ? g_shared.GetInaccuracyAtStance(
+                            local.pawn, peek_velocity, peek_standing)
+                      : ctx.predicted_inaccuracy;
+
+  // Current-shot selection is always based on current engine shoot-history.
+  auto current_hits =
+      scan_from_eye_candidates({}, shot_inaccuracy, effective_hc);
+  const auto best =
+      this->SelectBest(ctx, current_hits, shot_inaccuracy, effective_hc);
+
+  const auto accurate = best.valid && best.hitchance >= effective_hc;
+  const auto max_acc = g_shared.IsMaxAccuracy(shot_inaccuracy, peek_standing);
+  const auto force = best.valid && best.hitchance > 0.0f &&
                      (ctx.on_ground ? (config.force_shot.value && max_acc)
                                     : (config.force_shot_air.value && max_acc));
   const auto shot_viable = accurate || force;
+  const auto has_target = best.valid && best.hitchance > 0.0f;
 
   // Log rejection stages even when no shot is fired, without per-point I/O.
   static auto last_report_time = ULONGLONG{};
@@ -616,7 +688,8 @@ void Rage::RunGun(systems::Input::Usercmd* cmd, const AimContext& ctx,
     }
     logging::console::Print(
         "[rage scan] weapon={} head={} body_aim={} min_damage={} "
-        "head_multiplier={:.2f} missing={} invalid_bones={} damage_pruned={} "
+        "head_multiplier={:.2f} missing={} invalid_bones={} "
+        "damage_pruned={} "
         "points={} traces={} hits={} wrong_hitbox={} below_damage={} "
         "max_damage={:.0f} head_hc={:.0f}% required_hc={:.0f}% selected={} "
         "selected_hc={:.0f}% max_accuracy={} forced={}",
@@ -634,15 +707,16 @@ void Rage::RunGun(systems::Input::Usercmd* cmd, const AimContext& ctx,
   }
 
   // Autostop planning is independent from firing. Ground movement can use a
-  // predicted stopped eye; airborne stopping keeps the current target context.
+  // predicted stopped eye; airborne stopping keeps the current target
+  // context.
   if (!shot_viable && this->ShouldStopMovement(ctx)) {
     const auto stop = this->PredictStop(ctx, primary_eye, local);
     if (stop) {
       const auto future_offset = stop->eye - primary_eye;
       auto planned_hits =
-          scan_from_eye_candidates(future_offset, stop->inaccuracy);
+          scan_from_eye_candidates(future_offset, stop->inaccuracy, 0.0f);
       const auto planned =
-          this->SelectBest(ctx, planned_hits, stop->inaccuracy);
+          this->SelectBest(ctx, planned_hits, stop->inaccuracy, needed_hc);
       this->m_should_stop_ = planned.valid;
     } else {
       this->m_should_stop_ = best.valid;
@@ -650,38 +724,33 @@ void Rage::RunGun(systems::Input::Usercmd* cmd, const AimContext& ctx,
   }
 
   if (!best.valid) {
-    finish_doubletap(false);
+    duckpeek.OnTargetLost();
     return;
   }
 
-  if (duckpeek_active && allow_fire) {
-    if (shot_viable) {
-      this->m_release_duck_for_shot_ = true;
-    } else if (!this->m_duckpeek_reduck_) {
-      this->m_release_duck_for_shot_ = false;
-    }
-  }
-
-  auto ready_to_fire = shot_viable;
+  auto peek_decision = Misc::Duckpeek::ShotDecision::kFire;
   if (duckpeek_active) {
-    if (is_ducked) {
-      ready_to_fire = false;
-    } else {
-      ready_to_fire = ready_to_fire && this->m_release_duck_for_shot_;
+    peek_decision = duckpeek.PrepareShot(has_target, shot_viable, local.pawn);
+
+    if (peek_decision == Misc::Duckpeek::ShotDecision::kHold) {
+      duckpeek.OnShotSkipped();
+      return;
     }
   }
 
-  if (ready_to_fire && allow_fire) {
-    const auto subtick_attack = finish_doubletap(true);
-    this->FireGun(cmd, best, !accurate && force, best.hit.source_eye.position,
-                  local, subtick_attack);
+  if (this->DoubletapBlocksShot()) {
+    return;
+  }
 
-    if (duckpeek_active) {
-      this->m_duckpeek_reduck_ = true;
-      this->m_release_duck_for_shot_ = false;
+  if (shot_viable && allow_fire) {
+    this->FireGun(cmd, best, !accurate && force, best.hit.source_eye.position,
+                  local);
+
+    if (peek_decision == Misc::Duckpeek::ShotDecision::kFirePeek) {
+      duckpeek.OnFired();
     }
   } else {
-    finish_doubletap(false);
+    duckpeek.OnShotSkipped();
   }
 }
 
@@ -697,20 +766,23 @@ void Rage::RunTaser(systems::Input::Usercmd* cmd, const AimContext& ctx,
   }
 
   auto eye_candidates = g_shared.Sh().GetCandidates();
-  if (eye_candidates.count == 0) {
-    eye_candidates.entries[0].position = g_shared.GetShootPosition();
-    eye_candidates.entries[0].is_uninterpolated = true;
-    eye_candidates.count = 1;
+  if (eye_candidates.empty()) {
+    Shared::ShootHistory::EyeCandidate fallback{};
+    fallback.position = g_shared.GetShootPosition();
+    fallback.is_uninterpolated = true;
+    eye_candidates.push_back(fallback);
   }
 
+  // Melee is resolved from the live pawn, so only the current origin
+  // counts.
   std::vector<ScanHit> all_hits;
 
-  for (auto i = 0; i < eye_candidates.count; ++i) {
-    auto hits = this->ScanTaser(eye_candidates.entries[i].position, ctx,
+  {
+    auto hits = this->ScanTaser(eye_candidates.front().position, ctx,
                                 candidates, local);
 
     for (auto& h : hits) {
-      h.source_eye = eye_candidates.entries[i];
+      h.source_eye = eye_candidates.front();
       all_hits.push_back(std::move(h));
     }
   }
@@ -754,20 +826,23 @@ void Rage::RunKnife(systems::Input::Usercmd* cmd, const AimContext& ctx,
   }
 
   auto eye_candidates = g_shared.Sh().GetCandidates();
-  if (eye_candidates.count == 0) {
-    eye_candidates.entries[0].position = g_shared.GetShootPosition();
-    eye_candidates.entries[0].is_uninterpolated = true;
-    eye_candidates.count = 1;
+  if (eye_candidates.empty()) {
+    Shared::ShootHistory::EyeCandidate fallback{};
+    fallback.position = g_shared.GetShootPosition();
+    fallback.is_uninterpolated = true;
+    eye_candidates.push_back(fallback);
   }
 
+  // Melee is resolved from the live pawn, so only the current origin
+  // counts.
   std::vector<ScanHit> all_hits;
 
-  for (auto i = 0; i < eye_candidates.count; ++i) {
-    auto hits = this->ScanKnife(eye_candidates.entries[i].position, ctx, info,
+  {
+    auto hits = this->ScanKnife(eye_candidates.front().position, ctx, info,
                                 candidates, local);
 
     for (auto& h : hits) {
-      h.source_eye = eye_candidates.entries[i];
+      h.source_eye = eye_candidates.front();
       all_hits.push_back(std::move(h));
     }
   }
@@ -802,36 +877,57 @@ void Rage::RunKnife(systems::Input::Usercmd* cmd, const AimContext& ctx,
 void Rage::AutoRevolver(systems::Input::Usercmd* cmd, const AimContext& ctx,
                         const systems::Local::Snapshot& local) {
   if (!settings::g_combat.m_ragebot.enabled) {
-    this->m_revolver_cock_ticks_ = 0;
+    this->m_revolver_holding_ = false;
+    this->m_revolver_press_tick_ = 0;
     return;
   }
 
   if (!g_shared.CanShoot(cmd, local.controller)) {
-    this->m_revolver_cock_ticks_ = 0;
+    this->m_revolver_holding_ = false;
+    this->m_revolver_press_tick_ = 0;
     return;
   }
 
-  if (!settings::g_combat.m_autos.revolver.value) {
-    this->m_revolver_cock_ticks_ = 0;
-    return;
-  }
+  const auto& shared_ctx = g_shared.Ctx();
+  const auto& config =
+      settings::g_combat.m_ragebot.GetGroup(shared_ctx.weapon_type);
+  const auto no_spread = config.no_spread.value;
 
   constexpr auto kCockTicks{13};
-  if (this->m_revolver_cock_ticks_ >= kCockTicks) {
-    // End the held cycle. Target selection adds attack back on this
-    // command only when the revolver should actually fire.
+
+  if (no_spread) {
+    this->m_revolver_holding_ = false;
+    this->m_revolver_press_tick_ = 0;
+
+    if (!g_shared.CanShoot(cmd, local.controller, false)) {
+      return;
+    }
+
+    this->RunGun(cmd, ctx, local);
+
+    cmd->buttons.value |= cstypes::command_buttons::kInSecondAttack;
+    cmd->buttons.value_changed |= cstypes::command_buttons::kInSecondAttack;
+    cmd->buttons.value_scroll |= cstypes::command_buttons::kInSecondAttack;
+
+    const auto history_index = cmd->csgo_user_cmd.InputHistorySize() - 1;
+    if (history_index >= 0) {
+      cmd->csgo_user_cmd.SetAttack2StartHistoryIndex(history_index);
+    }
+    return;
+  }
+
+  if (this->m_revolver_press_tick_ >= kCockTicks) {
     cmd->buttons.value &= ~cstypes::command_buttons::kInAttack;
     cmd->buttons.value_changed |= cstypes::command_buttons::kInAttack;
     cmd->buttons.value_scroll &= ~cstypes::command_buttons::kInAttack;
     cmd->csgo_user_cmd.SetAttack1StartHistoryIndex(-1);
-    this->m_revolver_cock_ticks_ = 0;
+    this->m_revolver_press_tick_ = 0;
+    this->m_revolver_holding_ = false;
 
     this->RunGun(cmd, ctx, local);
     return;
   }
 
-  // Keep target and hitchance planning active throughout the cock cycle.
-  // Autostop consumes this command's decision on the following command.
   this->RunGun(cmd, ctx, local, false);
 
   cmd->buttons.value |= cstypes::command_buttons::kInAttack;
@@ -843,7 +939,11 @@ void Rage::AutoRevolver(systems::Input::Usercmd* cmd, const AimContext& ctx,
     cmd->csgo_user_cmd.SetAttack1StartHistoryIndex(history_index);
   }
 
-  ++this->m_revolver_cock_ticks_;
+  if (!this->m_revolver_holding_) {
+    this->m_revolver_press_tick_ = 0;
+    this->m_revolver_holding_ = true;
+  }
+  ++this->m_revolver_press_tick_;
 }
 
 std::vector<Rage::ScanHit> Rage::ScanPlayers(
@@ -1143,7 +1243,7 @@ std::vector<Rage::ScanHit> Rage::ScanPlayer(
 
 Rage::Target Rage::SelectBest(const AimContext& aim_ctx,
                               const std::vector<ScanHit>& hits,
-                              float eval_inaccuracy) const {
+                              float eval_inaccuracy, float needed_hc) const {
   auto hitgroup_priority = [](int hitbox_index) -> int {
     if (hitbox_index == 0) {
       return 4;
@@ -1239,10 +1339,6 @@ Rage::Target Rage::SelectBest(const AimContext& aim_ctx,
 
   const auto& config =
       settings::g_combat.m_ragebot.GetGroup(g_shared.Ctx().weapon_type);
-  const auto needed_hc =
-      config.hitchance_override.value
-          ? static_cast<float>(config.hitchance_override_value) / 100.0f
-          : static_cast<float>(config.hitchance) / 100.0f;
 
   auto max_head_hitchance{0.0f};
   for (auto& group : groups) {
@@ -1352,28 +1448,6 @@ float Rage::EvaluateHitchance(const ScanHit& hit, const AimContext& ctx,
   return g_shared.CalculateHitchance(
       hit.source_eye.position, hit.aim_angle, hit.hitbox,
       hit.record->bones[hit.bone_index], inaccuracy, ctx.spread);
-}
-
-float Rage::GetStandingInaccuracy(const systems::Local::Snapshot& local,
-                                  const AimContext& ctx) const {
-  auto velocity = ctx.velocity;
-  velocity.z = 0.0f;
-
-  const auto speed = velocity.Length2d();
-  if (speed > ctx.accurate_threshold) {
-    return g_shared.GetInaccuracyAtVelocity(local.pawn, velocity);
-  }
-
-  const auto& shared_ctx = g_shared.Ctx();
-  if (!shared_ctx.weapon_vdata) {
-    return ctx.predicted_inaccuracy;
-  }
-
-  const auto inaccuracy_stand = memory::Read<float>(
-      shared_ctx.weapon_vdata +
-      SCHEMA("CCSWeaponBaseVData", "m_flInaccuracyStand"_hash));
-  return std::max(inaccuracy_stand,
-                  g_shared.GetInaccuracyAtVelocity(local.pawn, velocity));
 }
 
 std::vector<Rage::ScanHit> Rage::ScanTaser(
@@ -1645,7 +1719,7 @@ std::vector<Rage::ScanHit> Rage::ScanKnife(
 
 void Rage::FireGun(systems::Input::Usercmd* cmd, const Target& tgt,
                    bool was_forced, const math::Vector3& shoot_eye,
-                   const systems::Local::Snapshot& local, bool subtick_attack) {
+                   const systems::Local::Snapshot& local) {
   if (!tgt.hit.record || !tgt.hit.record->valid) {
     return;
   }
@@ -1696,10 +1770,11 @@ void Rage::FireGun(systems::Input::Usercmd* cmd, const Target& tgt,
     const auto hitgroup_name =
         systems::g_hitboxes.HitgroupToName(tgt.hit.hitgroup);
     const auto bt_delta = g_shared.Ctx().current_tick - tgt.hit.record->tick;
-    logging::console::Print(
-        xs("[rage] shot target hp {} for {:.0f} in {} (hc {:.0f}%, bt {}t{})"),
-        tgt.hit.health, tgt.hit.damage, hitgroup_name, tgt.hitchance * 100.0f,
-        bt_delta, was_forced ? xs(", forced") : "");
+    logging::console::Print(xs("[rage] shot target hp {} for {:.0f} in {} "
+                               "(hc {:.0f}%, bt {}t{})"),
+                            tgt.hit.health, tgt.hit.damage, hitgroup_name,
+                            tgt.hitchance * 100.0f, bt_delta,
+                            was_forced ? xs(", forced") : "");
   }
 
   features::misc::g_impacts.OnBoom(
@@ -1766,14 +1841,42 @@ void Rage::FireGun(systems::Input::Usercmd* cmd, const Target& tgt,
     }
   }
 
-  if (!subtick_attack) {
-    cmd->buttons.value |= cstypes::command_buttons::kInAttack;
-    cmd->buttons.value_changed |= cstypes::command_buttons::kInAttack;
-    cmd->buttons.value_scroll |= cstypes::command_buttons::kInAttack;
-
-    if (history_size > 0) {
-      cmd->csgo_user_cmd.SetAttack1StartHistoryIndex(history_size - 1);
+  if (this->DoubletapHasClaim()) {
+    if (this->DoubletapBuildClaim(tgt.hit.position, tgt.hit.record->tick,
+                                  aim_angle)) {
+      const auto index = cmd->csgo_user_cmd.Attack1StartHistoryIndex();
+      if (index >= 0) {
+        const auto entry = cmd->csgo_user_cmd.MutableInputHistory(index);
+        if (entry) {
+          entry->SetPlayerTickCount(m_dt_claim_tick_);
+          entry->SetPlayerTickFraction(0.0f);
+          if (const auto angles = entry->MutableViewAngles()) {
+            angles->SetX(aim_angle.x - aim_punch.x);
+            angles->SetY(aim_angle.y - aim_punch.y);
+            if (config.no_spread.value) {
+              angles->SetZ(aim_angle.z);
+            }
+          }
+        }
+      }
+      m_dt_state_ = DoubletapState::kIdle;
+      m_dt_charge_tick_ = g_shared.Ctx().current_tick;
+      m_dt_charged_ = false;
+    } else {
+      m_dt_state_ = DoubletapState::kRelease;
+      m_dt_charge_tick_ = g_shared.Ctx().current_tick;
+      m_dt_charged_ = false;
     }
+  } else if (m_dt_state_ == DoubletapState::kIdle && m_dt_charged_) {
+    m_dt_state_ = DoubletapState::kRelease;
+  }
+
+  cmd->buttons.value |= cstypes::command_buttons::kInAttack;
+  cmd->buttons.value_changed |= cstypes::command_buttons::kInAttack;
+  cmd->buttons.value_scroll |= cstypes::command_buttons::kInAttack;
+
+  if (history_size > 0) {
+    cmd->csgo_user_cmd.SetAttack1StartHistoryIndex(history_size - 1);
   }
 
   math::Vector3 forward{};
@@ -1792,8 +1895,7 @@ void Rage::FireGun(systems::Input::Usercmd* cmd, const Target& tgt,
                       .Normalized()) < 0.707107f;
 
   auto command_aim = punched_aim;
-  if (!subtick_attack && facing_away &&
-      settings::g_combat.m_antiaim.hide_shots.value) {
+  if (facing_away && settings::g_combat.m_antiaim.hide_shots.value) {
     command_aim.x = 179.9f;
     command_aim.y = std::remainderf(punched_aim.y + 180.0f, 360.0f);
   }
@@ -1929,7 +2031,8 @@ std::vector<math::Vector3> Rage::GenerateMultipoints(
     }
   }
 
-  // Build a view-relative frame so points rotate correctly above and below us.
+  // Build a view-relative frame so points rotate correctly above and below
+  // us.
   const auto shoot_dir = (center - shoot_pos).Normalized();
   const auto ang = math::helpers::VectorToAngle(shoot_dir);
 
@@ -1957,7 +2060,8 @@ std::vector<math::Vector3> Rage::GenerateMultipoints(
         return origin + delta * fraction;
       }
     } else {
-      // Intersect box hitboxes in bone space using their directional support.
+      // Intersect box hitboxes in bone space using their directional
+      // support.
       auto inverse = bone_rot;
       inverse.x = -inverse.x;
       inverse.y = -inverse.y;

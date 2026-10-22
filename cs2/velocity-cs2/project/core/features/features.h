@@ -76,6 +76,7 @@ inline Edgejump g_edgejump{};
 inline Edgestop g_edgestop{};
 inline Edgebug g_edgebug{};
 inline Slowwalk g_slowwalk{};
+inline Slidewalk g_slidewalk{};
 
 }  // namespace movement
 

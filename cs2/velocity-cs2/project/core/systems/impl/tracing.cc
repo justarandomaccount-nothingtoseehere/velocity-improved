@@ -201,8 +201,8 @@ void Tracing::SetupTrace(TraceData* trace_data, const math::Vector3& start,
                      start, delta, filter, penetration_count, trace_world);
 }
 
-void Tracing::InitResult(Result* trace_result) const {
-  memory::Call<void>(PATTERN(patterns::trace_bullet_free), trace_result);
+void Tracing::InitTraceData(TraceData* trace_data) const {
+  memory::Call<void>(PATTERN(patterns::trace_data_init), trace_data);
 }
 
 void Tracing::FinalizeTrace(TraceData* trace_data, Result* hit,

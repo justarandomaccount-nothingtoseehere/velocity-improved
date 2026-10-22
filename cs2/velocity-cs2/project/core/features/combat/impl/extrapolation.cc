@@ -113,7 +113,16 @@ std::optional<Shared::Lagcomp::Record> Shared::Lagcomp::Extrapolate(
 
   const auto max_extrap = std::clamp(
       settings::g_combat.m_lagcomp.max_extrapolate_ticks.value, 1, 16);
-  const auto ticks_to_extrapolate = std::min(delta_ticks, max_extrap);
+  auto ticks_to_extrapolate = std::min(delta_ticks, max_extrap);
+
+  // The server only rewinds the victim inside its lag compensation window.
+  // A pose that stays further back than that window can never be selected,
+  // so the record has to be brought at least up to the window edge.
+  const auto unlag_ticks = Lagcomp::MaxUnlagTicks();
+  if (unlag_ticks > 0 && delta_ticks > unlag_ticks) {
+    ticks_to_extrapolate =
+        std::max(ticks_to_extrapolate, delta_ticks - unlag_ticks);
+  }
 
   auto velocity = memory::Read<math::Vector3>(
       pawn + SCHEMA("C_BaseEntity", "m_vecVelocity"_hash));

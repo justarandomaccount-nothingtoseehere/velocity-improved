@@ -141,6 +141,12 @@ class Input {
   [[nodiscard]] Usercmd* GetCurrentCmd(std::uintptr_t local_controller) const;
   [[nodiscard]] proto::SubtickMoveStep* AcquireSubtickStep(
       proto::RepeatedPtrField<proto::SubtickMoveStep>* subtick_moves) const;
+  [[nodiscard]] proto::SubtickMoveStep* AcquireSubtickStepAt(
+      proto::RepeatedPtrField<proto::SubtickMoveStep>* subtick_moves,
+      int index) const;
+  [[nodiscard]] proto::SubtickMoveStep* AcquireSubtickStepSorted(
+      proto::RepeatedPtrField<proto::SubtickMoveStep>* subtick_moves,
+      float when) const;
   [[nodiscard]] math::Vector3 GetViewAngles() const;
   [[nodiscard]] proto::InputHistoryEntry* PushInputHistory(
       Usercmd* cmd, const InputHistoryParams& params) const;
@@ -405,10 +411,10 @@ class Tracing {
     std::array<int, 4> skip_handles;
     std::array<std::int16_t, 2> collisions;
     std::int16_t v2;
+    std::uint8_t v3;
+    std::uint8_t type;
     std::uint8_t layer;
     std::uint8_t flags;
-    std::uint8_t v5;
-    std::uint8_t v6;
     std::byte pad0[0x6];
     char v7;
   };
@@ -434,9 +440,11 @@ class Tracing {
     math::Vector3 position;
     std::byte pad2[0x4];
     float fraction;
-    std::byte pad3[0x6];
+    std::uint64_t v3;
+    std::uint16_t hitgroup;
+    std::uint8_t v4;
     bool all_solid;
-    std::byte pad4[0x4d];
+    std::byte pad3[0x48];
   };
 
   struct TraceArrayElement {
@@ -463,6 +471,29 @@ class Tracing {
     bool unknown6;
     std::byte pad1[0x4b];
   };
+
+  static_assert(offsetof(Filter, vtable) == 0x0);
+  static_assert(offsetof(Filter, mask) == 0x8);
+  static_assert(offsetof(Filter, v1) == 0x10);
+  static_assert(offsetof(Filter, skip_handles) == 0x20);
+  static_assert(offsetof(Filter, collisions) == 0x30);
+  static_assert(offsetof(Filter, v2) == 0x34);
+  static_assert(offsetof(Filter, type) == 0x37);
+  static_assert(offsetof(Filter, layer) == 0x38);
+  static_assert(offsetof(Filter, flags) == 0x39);
+  static_assert(offsetof(Filter, v7) == 0x40);
+  static_assert(sizeof(Filter) == 0x48);
+  static_assert(offsetof(Result, hit_entity) == 0x8);
+  static_assert(offsetof(Result, contents) == 0x50);
+  static_assert(offsetof(Result, start_pos) == 0x78);
+  static_assert(offsetof(Result, end_pos) == 0x84);
+  static_assert(offsetof(Result, normal) == 0x90);
+  static_assert(offsetof(Result, position) == 0x9c);
+  static_assert(offsetof(Result, fraction) == 0xac);
+  static_assert(offsetof(Result, v3) == 0xb0);
+  static_assert(offsetof(Result, hitgroup) == 0xb8);
+  static_assert(offsetof(Result, all_solid) == 0xbb);
+  static_assert(sizeof(Result) == 0x108);
 
   static_assert(offsetof(TraceData, elements) == 0x18);
   static_assert(offsetof(TraceData, num_hits) == 0x1c20);
@@ -534,7 +565,7 @@ class Tracing {
   void SetupTrace(TraceData* trace_data, const math::Vector3& start,
                   const math::Vector3& delta, const Filter& filter,
                   int penetration_count, bool trace_world = false) const;
-  void InitResult(Result* trace_result) const;
+  void InitTraceData(TraceData* trace_data) const;
   void FinalizeTrace(TraceData* trace_data, Result* trace_result,
                      float unknown_float, void* unknown) const;
 };

@@ -32,22 +32,8 @@ void Input::Apply() {
     return;
   }
 
-  auto has_move_subticks = [](proto::BaseUsercmdPb* base_cmd) {
-    for (auto i = 0; i < base_cmd->SubtickMovesSize(); ++i) {
-      proto::SubtickMoveStep* step = base_cmd->MutableSubtickMoves(i);
-      if (!step) continue;
-
-      if (step->m_has_bits.Test(0x8) || step->m_has_bits.Test(0x10))
-        return true;
-
-      if (step->m_has_bits.Test(0x1)) return true;
-    }
-
-    return false;
-  };
-
   diag::SetExceptionPhase("input apply: subtick movement");
-  if (!has_move_subticks(base)) {
+  {
     const auto movement_services =
         local.pawn ? memory::Read<std::uintptr_t>(
                          local.pawn +
@@ -72,8 +58,8 @@ void Input::Apply() {
                                          std::fabsf(left_delta) > 0.0001f);
 
       if (has_meaningful_delta) {
-        const auto step =
-            systems::g_input.AcquireSubtickStep(base->MutableSubtickMoves());
+        const auto step = systems::g_input.AcquireSubtickStepAt(
+            base->MutableSubtickMoves(), 0);
         if (!step) return;
 
         step->SetButton(0);
@@ -167,6 +153,85 @@ proto::SubtickMoveStep* Input::AcquireSubtickStep(
   }
 
   return nullptr;
+}
+
+proto::SubtickMoveStep* Input::AcquireSubtickStepAt(
+    proto::RepeatedPtrField<proto::SubtickMoveStep>* subtick_moves,
+    int index) const {
+  if (!subtick_moves) {
+    return nullptr;
+  }
+
+  if (index < 0) {
+    index = 0;
+  }
+
+  if (subtick_moves->m_rep) {
+    if (subtick_moves->m_current_size < subtick_moves->m_rep->allocated_size) {
+      const auto element =
+          subtick_moves->m_rep->elements[subtick_moves->m_current_size];
+      if (element) {
+        for (auto i = subtick_moves->m_current_size; i > index; --i) {
+          subtick_moves->m_rep->elements[i] =
+              subtick_moves->m_rep->elements[i - 1];
+        }
+        subtick_moves->m_rep->elements[index] = element;
+        subtick_moves->m_current_size++;
+
+        const auto step = proto::ImplPtr<proto::SubtickMoveStep>(element);
+        *step = {};
+        return step;
+      }
+    }
+  }
+
+  const auto move_step = memory::Call<void*>(
+      PATTERN(patterns::subtick_move_alloc), subtick_moves->m_arena);
+  if (!move_step) {
+    return nullptr;
+  }
+
+  memory::Call<std::uintptr_t>(PATTERN(patterns::utl_vector_push),
+                               reinterpret_cast<std::uintptr_t>(subtick_moves),
+                               reinterpret_cast<std::uintptr_t>(move_step));
+
+  const auto size = subtick_moves->m_current_size;
+  if (subtick_moves->m_rep && index < size) {
+    for (auto i = size - 1; i > index; --i) {
+      subtick_moves->m_rep->elements[i] = subtick_moves->m_rep->elements[i - 1];
+    }
+    subtick_moves->m_rep->elements[index] = move_step;
+  }
+
+  return proto::ImplPtr<proto::SubtickMoveStep>(move_step);
+}
+
+proto::SubtickMoveStep* Input::AcquireSubtickStepSorted(
+    proto::RepeatedPtrField<proto::SubtickMoveStep>* subtick_moves,
+    float when) const {
+  if (!subtick_moves) {
+    return nullptr;
+  }
+
+  auto index = subtick_moves->m_current_size;
+
+  if (subtick_moves->m_rep) {
+    for (auto i = 0; i < subtick_moves->m_current_size; ++i) {
+      const auto* step = subtick_moves->MutableAt(i);
+      if (step && step->When() > when) {
+        index = i;
+        break;
+      }
+    }
+  }
+
+  const auto step = this->AcquireSubtickStepAt(subtick_moves, index);
+  if (!step) {
+    return nullptr;
+  }
+
+  step->SetWhen(when);
+  return step;
 }
 
 math::Vector3 Input::GetViewAngles() const {

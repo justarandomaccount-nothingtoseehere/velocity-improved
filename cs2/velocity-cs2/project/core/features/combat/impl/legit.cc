@@ -658,7 +658,8 @@ void Legit::ApplyTriggerbot(
 
       const auto min_hc =
           static_cast<float>(config.trigger_hitchance.value) / 100.0f;
-      if (hc < min_hc && !g_shared.IsMaxAccuracy(ctx.inaccuracy)) {
+      if (hc < min_hc &&
+          !g_shared.IsMaxAccuracy(ctx.inaccuracy, !g_shared.IsDucking())) {
         this->m_trigger_pending_pawn_ = 0;
         return;
       }

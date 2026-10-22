@@ -167,6 +167,7 @@
     <ClCompile Include="project\core\features\movement\impl\fastladder.cc" />
     <ClCompile Include="project\core\features\movement\impl\jumpbug.cc" />
     <ClCompile Include="project\core\features\movement\impl\slowwalk.cc" />
+    <ClCompile Include="project\core\features\movement\impl\slidewalk.cc" />
     <ClCompile Include="project\core\features\world\impl\scene.cc" />
     <ClCompile Include="project\core\features\world\impl\smoke.cc" />
     <ClCompile Include="project\core\features\world\impl\weather.cc" />

@@ -51,9 +51,9 @@ const ::protection::addresses::Address& draw_flash_effect = ADDRESS_IMPL(
 
 const ::protection::addresses::Address& draw_legs =
     ADDRESS_IMPL(::protection::addresses::Hash(
-                     "client.dll:4C8BDC555356574157498DAB78FBFFFF"),
+                     "client.dll:4C8BDC555356574156498DAB78FBFFFF"),
                  ::protection::addresses::AddressType::kPattern,
-                 "client.dll:4C8BDC555356574157498DAB78FBFFFF");
+                 "client.dll:4C8BDC555356574156498DAB78FBFFFF");
 
 const ::protection::addresses::Address& draw_overhead = ADDRESS_IMPL(
     ::protection::addresses::Hash("client.dll:40534883EC??488BD983FA??75??"),
@@ -423,9 +423,9 @@ const ::protection::addresses::Address& override_view =
 
 const ::protection::addresses::Address& parse_report_hit =
     ADDRESS_IMPL(::protection::addresses::Hash(
-                     "client.dll:48895C24184889742420574883EC20488D05D2935B01"),
+                     "client.dll:48895C24184889742420574883EC20488D05329F5901"),
                  ::protection::addresses::AddressType::kPattern,
-                 "client.dll:48895C24184889742420574883EC20488D05D2935B01");
+                 "client.dll:48895C24184889742420574883EC20488D05329F5901");
 
 const ::protection::addresses::Address& particle_create_effect = ADDRESS_IMPL(
     ::protection::addresses::Hash("client.dll:4C8BDC534881EC90000000F20F1005"),
@@ -596,9 +596,9 @@ const ::protection::addresses::Address& set_view_angles =
                  "client.dll:85D275??486381");
 
 const ::protection::addresses::Address& set_voice_data = ADDRESS_IMPL(
-    ::protection::addresses::Hash("client.dll:>E8????????4C39B5C8140000"),
+    ::protection::addresses::Hash("client.dll:>E8????????4C39B558140000"),
     ::protection::addresses::AddressType::kPattern,
-    "client.dll:>E8????????4C39B5C8140000");
+    "client.dll:>E8????????4C39B558140000");
 
 const ::protection::addresses::Address& sort_primitives =
     ADDRESS_IMPL(::protection::addresses::Hash(
@@ -640,15 +640,16 @@ const ::protection::addresses::Address& trace_bullet_data_init = ADDRESS_IMPL(
     ::protection::addresses::AddressType::kPattern,
     "client.dll:48895C240848896C2410488974241857415641574883EC40F20F1002");
 
-const ::protection::addresses::Address& trace_bullet_free = ADDRESS_IMPL(
-    ::protection::addresses::Hash("client.dll:>E8????????3BDE744E"),
+const ::protection::addresses::Address& trace_data_init = ADDRESS_IMPL(
+    ::protection::addresses::Hash(
+        "client.dll:48895C24??48897424??574883EC??488D79??33F6C747"),
     ::protection::addresses::AddressType::kPattern,
-    "client.dll:>E8????????3BDE744E");
+    "client.dll:48895C24??48897424??574883EC??488D79??33F6C747");
 
 const ::protection::addresses::Address& trace_bullet_update = ADDRESS_IMPL(
-    ::protection::addresses::Hash("client.dll:>E8????????F3440F106574"),
+    ::protection::addresses::Hash("client.dll:>E8????????F3440F105D74"),
     ::protection::addresses::AddressType::kPattern,
-    "client.dll:>E8????????F3440F106574");
+    "client.dll:>E8????????F3440F105D74");
 
 const ::protection::addresses::Address& trace_filter_init =
     ADDRESS_IMPL(::protection::addresses::Hash(
@@ -678,9 +679,10 @@ const ::protection::addresses::Address& trace_ray = ADDRESS_IMPL(
 
 const ::protection::addresses::Address& trace_ray_entity =
     ADDRESS_IMPL(::protection::addresses::Hash(
-                     "client.dll:44246848897C2420>E8????????488B3D????????"),
+                     "client.dll:4C8BDC49895B0849896B1049897318574881EC800000"
+                     "00"),
                  ::protection::addresses::AddressType::kPattern,
-                 "client.dll:44246848897C2420>E8????????488B3D????????");
+                 "client.dll:4C8BDC49895B0849896B1049897318574881EC80000000");
 
 const ::protection::addresses::Address& update_fov_sensitivity =
     ADDRESS_IMPL(::protection::addresses::Hash(
@@ -699,12 +701,6 @@ const ::protection::addresses::Address& view_matrix = ADDRESS_IMPL(
     ::protection::addresses::Hash("client.dll:488D0D*????????48C1E006"),
     ::protection::addresses::AddressType::kPattern,
     "client.dll:488D0D*????????48C1E006");
-
-const ::protection::addresses::Address& viewmodel_update_mesh =
-    ADDRESS_IMPL(::protection::addresses::Hash(
-                     "client.dll:>E8????????498D8D??????????????488D5424"),
-                 ::protection::addresses::AddressType::kPattern,
-                 "client.dll:>E8????????498D8D??????????????488D5424");
 
 const ::protection::addresses::Address& weapon_calculate_spread =
     ADDRESS_IMPL(::protection::addresses::Hash(
@@ -762,17 +758,6 @@ const ::protection::addresses::Address& weapon_update_composite_material =
         ::protection::addresses::AddressType::kPattern,
         "client.dll:"
         "48895C241048896C2418488974242057415641574883EC20440FB6F2488BF9");
-
-const ::protection::addresses::Address& weapon_update_mesh = ADDRESS_IMPL(
-    ::protection::addresses::Hash("client.dll:>E8????????498D8C2408060000"),
-    ::protection::addresses::AddressType::kPattern,
-    "client.dll:>E8????????498D8C2408060000");
-
-const ::protection::addresses::Address& weapon_update_skin =
-    ADDRESS_IMPL(::protection::addresses::Hash(
-                     "client.dll:4055534157488DAC2400FEFFFF4881EC00030000"),
-                 ::protection::addresses::AddressType::kPattern,
-                 "client.dll:4055534157488DAC2400FEFFFF4881EC00030000");
 
 const ::protection::addresses::Address& econ_item_view_set_attribute =
     ADDRESS_IMPL(::protection::addresses::Hash(
