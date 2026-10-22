@@ -3,6 +3,7 @@
 #include "core/features/features.h"
 #include "core/settings.h"
 #include "core/systems/systems.h"
+#include "protection/game_addresses.h"
 #include "utilities/cstypes.h"
 #include "utilities/math/math.h"
 
