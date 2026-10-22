@@ -78,7 +78,15 @@ void Misc::Antiaim::OnCreateMove(systems::Input::Usercmd* cmd) {
 
   this->m_should_correct_ = true;
 
-  if (CONVAR("sv_subtick_movement_view_angles")->Get<bool>()) {
+  const auto subtick_view_angles =
+      CONVAR("sv_subtick_movement_view_angles")->Get<bool>();
+  const auto on_ground = (systems::g_prediction.Pre().flags &
+                          cstypes::entity_flags::kOnGround) != 0;
+
+  if (subtick_view_angles && on_ground &&
+      CONVAR("sv_quantize_movement_input")->Get<bool>()) {
+    this->CorrectMovementReprojection(cmd);
+  } else if (subtick_view_angles) {
     this->CorrectMovementYawDelta(cmd);
   } else {
     this->CorrectMovement(cmd);
@@ -566,6 +574,128 @@ void Misc::Antiaim::CorrectMovement(systems::Input::Usercmd* cmd) {
 
     cmd->buttons.value = buttons;
   }
+}
+
+void Misc::Antiaim::CorrectMovementReprojection(systems::Input::Usercmd* cmd) {
+  if (!this->m_should_correct_) {
+    return;
+  }
+
+  this->m_should_correct_ = false;
+
+  const auto base = cmd->csgo_user_cmd.MutableBase();
+  if (!base) {
+    return;
+  }
+
+  const auto held = cmd->buttons.value;
+
+  auto real_forward{0.0f};
+  auto real_left{0.0f};
+
+  if (held & cstypes::command_buttons::kInForward) {
+    real_forward = 1.0f;
+  } else if (held & cstypes::command_buttons::kInBack) {
+    real_forward = -1.0f;
+  }
+
+  if (held & cstypes::command_buttons::kInMoveleft) {
+    real_left = 1.0f;
+  } else if (held & cstypes::command_buttons::kInMoveright) {
+    real_left = -1.0f;
+  }
+
+  if (real_forward == 0.0f && real_left == 0.0f) {
+    return;
+  }
+
+  if (!(systems::g_prediction.Pre().flags & cstypes::entity_flags::kOnGround)) {
+    return;
+  }
+
+  auto yaw_delta = this->m_modified_angles_.y - this->m_old_angles_.y;
+  math::helpers::NormalizeAngle(yaw_delta);
+
+  if (std::fabsf(yaw_delta) <= 0.5f) {
+    return;
+  }
+
+  const auto fake_yaw = this->m_modified_angles_.y;
+  const auto fake_pitch = this->m_modified_angles_.x;
+  const auto reverse = fake_pitch > 89.0f ? -1 : 1;
+
+  auto wish_yaw = fake_yaw;
+  math::helpers::NormalizeAngle(wish_yaw);
+
+  const auto wish_pitch = std::clamp(fake_pitch, -89.0f, 89.0f);
+  const math::Vector3 wish_angles{wish_pitch, wish_yaw, 0.0f};
+  const math::Vector3 true_angles{this->m_old_angles_.x, this->m_old_angles_.y,
+                                  0.0f};
+
+  math::Vector3 wish_forward{}, wish_right{}, wish_up{};
+  math::Vector3 true_forward{}, true_right{}, true_up{};
+  math::helpers::AngleVectorsLeft(wish_angles, &wish_forward, &wish_right,
+                                  &wish_up);
+  math::helpers::AngleVectorsLeft(true_angles, &true_forward, &true_right,
+                                  &true_up);
+
+  const auto wish_forward_len = wish_forward.Length2d();
+  const auto wish_right_len = wish_right.Length2d();
+  const auto true_forward_len = true_forward.Length2d();
+  const auto true_right_len = true_right.Length2d();
+
+  if (wish_forward_len == 0.0f || wish_right_len == 0.0f ||
+      true_forward_len == 0.0f || true_right_len == 0.0f) {
+    return;
+  }
+
+  const math::Vector3 nff{wish_forward.x / wish_forward_len,
+                          wish_forward.y / wish_forward_len, 0.0f};
+  const math::Vector3 nfr{wish_right.x / wish_right_len,
+                          wish_right.y / wish_right_len, 0.0f};
+  const math::Vector3 ntf{true_forward.x / true_forward_len,
+                          true_forward.y / true_forward_len, 0.0f};
+  const math::Vector3 ntr{true_right.x / true_right_len,
+                          true_right.y / true_right_len, 0.0f};
+
+  const auto side_input = -real_left;
+  const auto true_forward_x = ntf.x * real_forward;
+  const auto true_forward_y = ntf.y * real_forward;
+  const auto true_side_x = ntr.x * side_input;
+  const auto true_side_y = ntr.y * side_input;
+
+  auto corrected_forward = static_cast<float>(reverse) *
+                           ((nff.x * true_side_x + nff.y * true_side_y) +
+                            (nff.x * true_forward_x + nff.y * true_forward_y));
+  auto corrected_side = (nfr.x * true_side_x + nfr.y * true_side_y) +
+                        (nfr.x * true_forward_x + nfr.y * true_forward_y);
+
+  corrected_forward = std::clamp(corrected_forward, -1.0f, 1.0f);
+  corrected_side = std::clamp(corrected_side, -1.0f, 1.0f);
+
+  const math::Vector3 dir{nff.x * corrected_forward + nfr.x * corrected_side,
+                          nff.y * corrected_forward + nfr.y * corrected_side,
+                          0.0f};
+  const auto adjusted =
+      std::atan2f(dir.y, dir.x) * (180.0f / std::numbers::pi_v<float>);
+
+  auto roll = fake_pitch >= 0.0f ? -adjusted + fake_yaw + 90.0f
+                                 : adjusted - fake_yaw - 90.0f;
+  math::helpers::NormalizeAngle(roll);
+
+  if (auto* view_angles = base->MutableViewangles()) {
+    view_angles->SetX(fake_pitch);
+    view_angles->SetZ(roll);
+  }
+
+  base->SetForwardmove(0.0f);
+  base->SetLeftmove(1.0f);
+
+  cmd->buttons.value &= ~static_cast<std::uintptr_t>(
+      cstypes::command_buttons::kInForward | cstypes::command_buttons::kInBack |
+      cstypes::command_buttons::kInMoveleft |
+      cstypes::command_buttons::kInMoveright);
+  cmd->buttons.value |= cstypes::command_buttons::kInMoveleft;
 }
 
 void Misc::Antiaim::CorrectMovementYawDelta(systems::Input::Usercmd* cmd) {

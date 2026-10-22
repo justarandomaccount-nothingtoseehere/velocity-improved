@@ -324,6 +324,7 @@ class Misc {
     [[nodiscard]] std::optional<float> MeasureHeadYawOffset(
         const systems::Local::Snapshot& local) const;
     void CorrectMovement(systems::Input::Usercmd* cmd);
+    void CorrectMovementReprojection(systems::Input::Usercmd* cmd);
     void CorrectMovementYawDelta(systems::Input::Usercmd* cmd);
     [[nodiscard]] bool IsNearLadder(std::uintptr_t local_pawn) const;
 
