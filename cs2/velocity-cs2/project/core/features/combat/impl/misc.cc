@@ -480,8 +480,8 @@ float Misc::Antiaim::GetYaw(const math::Vector3& view_angles,
   if (const auto head_offset = this->MeasureHeadYawOffset(local)) {
     const auto slash =
         std::max(settings::g_combat.m_antiaim.head_offset_slash.value, 1);
-    const auto correction =
-        std::clamp(*head_offset, -90.0f, 90.0f) / static_cast<float>(slash);
+    const auto correction = std::clamp(std::abs(*head_offset), 0.0f, 90.0f) /
+                            static_cast<float>(slash);
 
     this->m_head_offset_ = correction;
 
