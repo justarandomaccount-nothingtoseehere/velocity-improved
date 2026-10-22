@@ -1552,6 +1552,8 @@ struct Movement {
     config::val<float> angle{90.0f, "movement", "slidewalk angle"};
   } m_slidewalk{};
 
+  xui::setting static_legs{false, {}, "static legs", "movement"};
+
   struct TestStrafer {
     xui::setting enabled{false, {}, "test strafer", "movement"};
   } m_test_strafer{};

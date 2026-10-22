@@ -568,6 +568,7 @@ void __fastcall Cheat::CreateMove(std::uintptr_t thisptr, int slot,
 
     diag::SetExceptionPhase("create_move: quickpeek");
     features::combat::g_misc.Quickpeek().OnCreateMove(current_cmd);
+    features::movement::g_static_legs.OnCreateMove(current_cmd);
     if (trace) {
       diag::Step("create_move: quickpeek end");
       diag::Step("create_move: final subtick begin");
@@ -576,7 +577,8 @@ void __fastcall Cheat::CreateMove(std::uintptr_t thisptr, int slot,
     diag::SetExceptionPhase("create_move: final subtick");
     const auto final_base = current_cmd->csgo_user_cmd.MutableBase();
     if (final_base && systems::Input::HasMoveSubticks(final_base) &&
-        !features::movement::g_test_strafer.HandledThisTick()) {
+        !features::movement::g_test_strafer.HandledThisTick() &&
+        !features::movement::g_static_legs.ActiveThisTick()) {
       final_base->SetForwardmove(0.0f);
       final_base->SetLeftmove(0.0f);
     }

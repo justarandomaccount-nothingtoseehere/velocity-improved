@@ -98,6 +98,17 @@ class Slidewalk {
   void OnCreateMove(systems::Input::Usercmd* cmd) const;
 };
 
+class StaticLegs {
+ public:
+  void OnCreateMove(systems::Input::Usercmd* cmd);
+  [[nodiscard]] bool ActiveThisTick() const {
+    return this->m_active_this_tick_;
+  }
+
+ private:
+  bool m_active_this_tick_{false};
+};
+
 class TestStrafer {
  public:
   void OnCreateMove(systems::Input::Usercmd* cmd);
