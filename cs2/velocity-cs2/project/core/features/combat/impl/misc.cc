@@ -590,6 +590,24 @@ void Misc::Antiaim::CorrectMovementYawDelta(systems::Input::Usercmd* cmd) {
     return;
   }
 
+  const auto forward_move = base->Forwardmove();
+  const auto left_move = base->Leftmove();
+
+  if (CONVAR("sv_quantize_movement_input")->Get<bool>() &&
+      (forward_move != 0.0f || left_move != 0.0f)) {
+    const auto quantized_forward = std::roundf(forward_move);
+    const auto quantized_left = std::roundf(left_move);
+
+    if (quantized_forward != 0.0f || quantized_left != 0.0f) {
+      const auto intended_yaw =
+          math::helpers::RadToDeg(std::atan2f(left_move, forward_move));
+      const auto quantized_yaw = math::helpers::RadToDeg(
+          std::atan2f(quantized_left, quantized_forward));
+      yaw_delta += intended_yaw - quantized_yaw;
+      math::helpers::NormalizeAngle(yaw_delta);
+    }
+  }
+
   const auto step = systems::g_input.AcquireSubtickStepSorted(
       base->MutableSubtickMoves(), 1.0f / 64.0f);
   if (!step) {
