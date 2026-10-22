@@ -222,7 +222,6 @@
     <ClCompile Include="project\utilities\addresses\impl\globals.cc" />
     <ClCompile Include="project\utilities\addresses\impl\interfaces\engine_cvar.cc" />
     <ClCompile Include="project\utilities\addresses\impl\modules.cc" />
-    <ClCompile Include="project\utilities\discord_webhook.cc" />
     <ClCompile Include="project\utilities\hooking\impl\allocator.cc" />
     <ClCompile Include="project\utilities\hooking\impl\jmp.cc" />
     <ClCompile Include="project\utilities\hooking\impl\manager.cc" />
@@ -325,7 +324,6 @@
     <ClInclude Include="project\utilities\addresses\interfaces.h" />
     <ClInclude Include="project\utilities\animation.h" />
     <ClInclude Include="project\utilities\cstypes.h" />
-    <ClInclude Include="project\utilities\discord_webhook.h" />
     <ClInclude Include="project\utilities\fnv1a.h" />
     <ClInclude Include="project\utilities\game_path.h" />
     <ClInclude Include="project\utilities\hooking\hooking.h" />

@@ -10,7 +10,6 @@
 #include "core/systems/systems.h"
 #include "utilities/addresses/addresses.h"
 #include "utilities/diag.h"
-#include "utilities/discord_webhook.h"
 #include "utilities/logging/logging.h"
 #include "utilities/memory/memory.h"
 #include "utilities/security/security.h"
@@ -302,8 +301,6 @@ DWORD WINAPI InitThreadImpl(LPVOID param) {
     if (!steam::Http::Initialize()) {
       INIT_FAIL("failed to initialize steam http.");
     }
-
-    discord_webhook::SendTestMessage();
 
     if (!steam::Friends::Initialize()) {
       INIT_FAIL("failed to initialize steam friends.");

@@ -61,5 +61,3 @@ platform integration constraints when making style changes.
 ## Why
 
 I was bored.
-
-![image](media/menu.jpg)
