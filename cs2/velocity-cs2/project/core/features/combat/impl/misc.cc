@@ -1132,8 +1132,8 @@ void Misc::Quickpeek::OnCreateMove(systems::Input::Usercmd* cmd) {
       this->m_fired_ = false;
     } else if (distance < speed * 0.1f && speed > 15.0f) {
       const auto vel_angle = math::helpers::VectorToAngle(velocity * -1.0f);
-      const auto yaw_diff =
-          math::helpers::DegToRad(base->Viewangles()->Y() - vel_angle.y);
+      const auto yaw_diff = math::helpers::DegToRad(
+          systems::g_input.GetViewAngles().y - vel_angle.y);
 
       base->SetForwardmove(std::cosf(yaw_diff));
       base->SetLeftmove(-std::sinf(yaw_diff));
@@ -1161,8 +1161,8 @@ void Misc::Quickpeek::OnCreateMove(systems::Input::Usercmd* cmd) {
     } else {
       const auto diff = this->m_saved_origin_ - origin;
       const auto angle_to_pos = math::helpers::VectorToAngle(diff);
-      const auto yaw_diff =
-          math::helpers::DegToRad(base->Viewangles()->Y() - angle_to_pos.y);
+      const auto yaw_diff = math::helpers::DegToRad(
+          systems::g_input.GetViewAngles().y - angle_to_pos.y);
 
       base->SetForwardmove(std::cosf(yaw_diff));
       base->SetLeftmove(-std::sinf(yaw_diff));
@@ -1390,7 +1390,7 @@ void Misc::Autostop::OnCreateMove(systems::Input::Usercmd* cmd) {
   const auto move_magnitude =
       std::clamp(speed / ctx.weapon_max_speed, 0.0f, 1.0f);
   const auto yaw_rad =
-      base->Viewangles()->Y() * (std::numbers::pi_v<float> / 180.0f);
+      systems::g_input.GetViewAngles().y * (std::numbers::pi_v<float> / 180.0f);
   const auto sy = std::sinf(yaw_rad);
   const auto cy = std::cosf(yaw_rad);
 

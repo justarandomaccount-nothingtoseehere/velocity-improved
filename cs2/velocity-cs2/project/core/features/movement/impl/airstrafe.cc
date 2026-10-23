@@ -40,7 +40,7 @@ void Airstrafe::OnCreateMove(systems::Input::Usercmd* cmd) {
       const auto vel_yaw =
           std::atan2f(vel.y, vel.x) * (180.0f / std::numbers::pi_v<float>);
 
-      const auto view_yaw = base->Viewangles()->Y();
+      const auto view_yaw = this->m_angles_.y;
       const auto relative_yaw =
           (vel_yaw - view_yaw) * (std::numbers::pi_v<float> / 180.0f);
 
@@ -203,8 +203,7 @@ void Airstrafe::OnCreateMove(systems::Input::Usercmd* cmd) {
 
     if (speed_2d > 0.0001f) {
       math::Vector3 forward_dir{}, right_dir{};
-      math::helpers::AngleVectors2d(base->Viewangles()->Y(), forward_dir,
-                                    right_dir);
+      math::helpers::AngleVectors2d(this->m_angles_.y, forward_dir, right_dir);
 
       math::Vector3 wish_dir{
           (forward_dir.x * last_impulses.x * effective_maxspeed) +
@@ -307,7 +306,7 @@ void Airstrafe::OnCreateMove(systems::Input::Usercmd* cmd) {
 
         math::helpers::NormalizeAngle(target_yaw);
 
-        this->RotateMovement(base, target_yaw, base->Viewangles()->Y());
+        this->RotateMovement(base, target_yaw, this->m_angles_.y);
       }
     }
 
@@ -408,8 +407,8 @@ void Airstrafe::RotateToStop(proto::BaseUsercmdPb* base,
     base->SetLeftmove(0.0f);
   }
 
-  const auto rotation = (base->Viewangles()->Y() - wish_yaw) *
-                        (std::numbers::pi_v<float> / 180.0f);
+  const auto rotation =
+      (this->m_angles_.y - wish_yaw) * (std::numbers::pi_v<float> / 180.0f);
   const auto fwd = base->Forwardmove();
   const auto side = base->Leftmove();
 

@@ -30,11 +30,7 @@ void Slidewalk::OnCreateMove(systems::Input::Usercmd* cmd) const {
     return;
   }
 
-  const auto angles = base->Viewangles();
-  if (!angles) {
-    return;
-  }
-
+  const auto real_angles = systems::g_input.GetViewAngles();
   const auto slide = cfg.angle;
   if (std::fabsf(slide) < 0.01f) {
     return;
@@ -53,7 +49,7 @@ void Slidewalk::OnCreateMove(systems::Input::Usercmd* cmd) const {
   math::helpers::NormalizeAngle(yaw_delta);
 
   if (render_mode) {
-    auto render_yaw = angles->Y() + slide;
+    auto render_yaw = real_angles.y + slide;
     math::helpers::NormalizeAngle(render_yaw);
     base->MutableViewangles()->SetY(render_yaw);
 

@@ -107,7 +107,7 @@ void Edgestop::OnCreateMove(systems::Input::Usercmd* cmd) const {
     return;
   }
 
-  const auto view_yaw = base->Viewangles()->Y();
+  const auto view_yaw = systems::g_input.GetViewAngles().y;
   const auto view_yaw_rad = view_yaw * (std::numbers::pi_v<float> / 180.0f);
   const auto max_weapon_speed = combat::g_shared.Ctx().valid
                                     ? combat::g_shared.Ctx().weapon_max_speed

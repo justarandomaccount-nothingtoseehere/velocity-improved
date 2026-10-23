@@ -228,7 +228,7 @@ void TestStrafer::QuantizedPath(systems::Input::Usercmd* cmd) {
   const auto& prestate = systems::g_prediction.Pre();
   const auto velocity = prestate.networked_velocity;
   const auto speed_2d = velocity.Length2d();
-  const auto command_yaw = base->Viewangles()->Y();
+  const auto command_yaw = systems::g_input.GetViewAngles().y;
 
   const auto player_move = MovementFromButtons(this->m_last_pressed_);
   if (player_move.x == 0.0f && player_move.y == 0.0f) {
