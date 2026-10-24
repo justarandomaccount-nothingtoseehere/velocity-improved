@@ -64,6 +64,10 @@ void Debug::RenderBoneRevealer(xdraw::draw_list& draw_list,
                                       static_cast<int>(skeleton.size()) - 1);
 
   for (auto bone_id = min_id; bone_id <= max_id; ++bone_id) {
+    if (skeleton[bone_id].position.LengthSqr() < 1.0f) {
+      continue;
+    }
+
     const auto screen = systems::g_view.ProjectFull(skeleton[bone_id].position);
 
     if (!screen.on_screen || screen.w <= 0.0f) {
@@ -149,6 +153,10 @@ void Debug::RenderBoneGrid(xdraw::draw_list& draw_list,
   const auto skeleton = systems::g_bones.GetSkeleton(local.ViewPawn());
 
   for (auto bone_id = 0u; bone_id < skeleton.size(); ++bone_id) {
+    if (skeleton[bone_id].position.LengthSqr() < 1.0f) {
+      continue;
+    }
+
     const auto screen = systems::g_view.ProjectFull(skeleton[bone_id].position);
 
     if (!screen.on_screen || screen.w <= 0.0f) {

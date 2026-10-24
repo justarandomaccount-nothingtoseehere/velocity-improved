@@ -8,14 +8,29 @@ namespace systems {
 
 int Bones::GetCount(std::uintptr_t game_scene_node) {
   if (!game_scene_node) return 0;
-  const auto model_handle = memory::Read<std::uintptr_t>(
-      game_scene_node +
-      static_cast<std::ptrdiff_t>(
-          SCHEMA("CSkeletonInstance", "m_modelState"_hash)) +
-      static_cast<std::ptrdiff_t>(SCHEMA("CModelState", "m_hModel"_hash)));
-  if (!model_handle) return 0;
+
+  const auto model_state =
+      game_scene_node + static_cast<std::ptrdiff_t>(
+                            SCHEMA("CSkeletonInstance", "m_modelState"_hash));
+
+  const auto direct_count = memory::Read<std::uint16_t>(model_state + 0x94);
+  if (direct_count > 0 && direct_count <= kMaxBoneCount) {
+    return direct_count;
+  }
+
+  const auto model_handle =
+      memory::SafeRead<std::uintptr_t>(model_state + 0xA0)
+          .value_or(
+              memory::SafeRead<std::uintptr_t>(model_state + 0xD0).value_or(0));
+  if (!model_handle) {
+    return 0;
+  }
+
   const auto model = memory::Read<std::uintptr_t>(model_handle);
-  if (!model) return 0;
+  if (!model) {
+    return 0;
+  }
+
   const auto count = memory::Read<int>(model + 0x188 + 0xC);
   return count > 0 && count <= kMaxBoneCount ? count : 0;
 }
