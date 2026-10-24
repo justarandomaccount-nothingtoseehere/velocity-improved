@@ -318,7 +318,7 @@ class Misc {
     }
 
    private:
-    [[nodiscard]] float GetPitch(float view_pitch);
+    [[nodiscard]] float GetPitch();
     [[nodiscard]] float GetYaw(const math::Vector3& view_angles,
                                const systems::Local::Snapshot& local);
     [[nodiscard]] std::optional<float> MeasureEnemyRayYawOffset(
@@ -337,6 +337,11 @@ class Misc {
     float m_indicator_yaw_{};
     float m_head_offset_{};
     float m_roll_adjust_{};
+    int m_roll_sign_{};
+    int m_roll_streak_{};
+    int m_modifier_tick_{};
+    int m_jitter_side_{};
+    float m_spin_angle_{};
     std::uintptr_t m_measure_enemy_{};
     std::uintptr_t m_yawed_enemy_{};
   };

@@ -195,15 +195,18 @@ struct Combat {
   } m_legitbot{};
 
   struct Antiaim {
-    enum class PitchMode : std::uint8_t { kNone, kDown, kUp };
-
     xui::setting enabled{true, {}, "anti aim", "anti aim"};
-    config::enm<PitchMode> pitch{PitchMode::kDown, "anti aim", "pitch"};
+    config::val<int> pitch{89, "anti aim", "pitch"};
     xui::setting auto_yaw_adjust{
         true,
         {},
         "correct yaw to compensate for the models inherit sideways roll",
         "anti aim"};
+    xui::setting jitter{false, {}, "jitter", "anti aim"};
+    config::val<int> jitter_amount{15, "anti aim", "jitter amount"};
+    config::val<int> jitter_speed{2, "anti aim", "jitter speed"};
+    xui::setting spin{false, {}, "spin", "anti aim"};
+    config::val<int> spin_speed{40, "anti aim", "spin speed"};
     xui::setting manual_left{
         false, {'Z', xui::bind_mode::toggle}, "force left", "anti aim"};
     xui::setting manual_right{

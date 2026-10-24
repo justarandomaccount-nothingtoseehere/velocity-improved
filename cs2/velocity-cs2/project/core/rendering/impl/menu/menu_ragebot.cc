@@ -9,7 +9,6 @@ namespace detail {
 
 constexpr const char* kHitboxNames[]{"head", "chest", "stomach",
                                      "arms", "legs",  "paws"};
-constexpr const char* kPitchItems[]{"none", "down", "up"};
 
 }  // namespace detail
 
@@ -93,7 +92,7 @@ void Menu::DrawRagebot(float group_w) const {
   if (xui::begin_child("##ragebot_antiaim", col_w)) {
     xui::checkbox("anti aim", aa.enabled);
 
-    xui::combo("pitch", aa.pitch.value, detail::kPitchItems, 3);
+    xui::slider_int("pitch##aa", aa.pitch, -89, 89, "%d°");
 
     xui::checkbox("compensate roll", aa.auto_yaw_adjust);
     xui::checkbox("force left", aa.manual_left);
@@ -101,6 +100,14 @@ void Menu::DrawRagebot(float group_w) const {
     xui::checkbox("hide onshot", aa.hide_shots);
     xui::checkbox("avoid backstab", aa.avoid_backstab);
     xui::checkbox("base on real view", aa.real_view_goal);
+
+    xui::text("modifiers", tokens::col_text_dim);
+    xui::checkbox("jitter", aa.jitter);
+    xui::slider_int("jitter amount##aa", aa.jitter_amount, 1, 45, "%d°");
+    xui::slider_int("jitter speed##aa", aa.jitter_speed, 1, 16, "%d");
+    xui::checkbox("spin", aa.spin);
+    xui::slider_int("spin speed##aa", aa.spin_speed, 1, 90, "%d");
+
     xui::checkbox("direction indicator", aa.direction_indicator);
 
     if (xui::begin_popup("##aa_indicator", 220.0f)) {

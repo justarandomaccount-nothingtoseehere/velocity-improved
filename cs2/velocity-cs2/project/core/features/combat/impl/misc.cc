@@ -75,7 +75,7 @@ void Misc::Antiaim::OnCreateMove(systems::Input::Usercmd* cmd) {
   this->m_antiaim_active_ = true;
 
   this->m_modified_angles_ = this->m_old_angles_;
-  this->m_modified_angles_.x = this->GetPitch(this->m_old_angles_.x);
+  this->m_modified_angles_.x = this->GetPitch();
   this->m_modified_angles_.y = this->GetYaw(this->m_old_angles_, local);
 
   math::helpers::NormalizeAngles(this->m_modified_angles_);
@@ -235,15 +235,10 @@ void Misc::Antiaim::OnRender(xdraw::draw_list& draw_list) const {
   }
 }
 
-float Misc::Antiaim::GetPitch(float view_pitch) {
-  switch (settings::g_combat.m_antiaim.pitch) {
-    case settings::Combat::Antiaim::PitchMode::kDown:
-      return 89.0f;
-    case settings::Combat::Antiaim::PitchMode::kUp:
-      return -89.0f;
-    default:
-      return view_pitch;
-  }
+float Misc::Antiaim::GetPitch() {
+  const auto pitch =
+      static_cast<float>(settings::g_combat.m_antiaim.pitch.value);
+  return std::clamp(pitch, -89.0f, 89.0f);
 }
 
 std::optional<float> Misc::Antiaim::MeasureEnemyRayYawOffset(
@@ -575,6 +570,25 @@ float Misc::Antiaim::GetYaw(const math::Vector3& view_angles,
     yaw += 90.0f;
   }
 
+  const auto& aa = settings::g_combat.m_antiaim;
+
+  if (aa.spin.value) {
+    this->m_spin_angle_ = std::fmod(
+        this->m_spin_angle_ + static_cast<float>(aa.spin_speed.value), 360.0f);
+    yaw = this->m_spin_angle_;
+  } else {
+    this->m_spin_angle_ = yaw;
+  }
+
+  if (aa.jitter.value) {
+    this->m_jitter_side_ = this->m_jitter_side_ == 0 ? 1 : this->m_jitter_side_;
+    if (++this->m_modifier_tick_ % aa.jitter_speed.value == 0) {
+      this->m_jitter_side_ = -this->m_jitter_side_;
+    }
+    yaw += static_cast<float>(this->m_jitter_side_) *
+           static_cast<float>(aa.jitter_amount.value);
+  }
+
   this->m_head_offset_ = 0.0f;
 
   static constexpr auto kRollEpsilon{0.05f};
@@ -585,12 +599,11 @@ float Misc::Antiaim::GetYaw(const math::Vector3& view_angles,
   static constexpr auto kRollGainMicro{0.25f};
 
   const auto compensating =
-      settings::g_combat.m_antiaim.auto_yaw_adjust.value &&
-      settings::g_combat.m_antiaim.pitch !=
-          settings::Combat::Antiaim::PitchMode::kNone;
+      aa.auto_yaw_adjust.value && !aa.jitter.value && !aa.spin.value;
 
   if (!compensating) {
     this->m_roll_adjust_ = 0.0f;
+    this->m_roll_streak_ = 0;
   }
 
   if (const auto ray_offset = this->MeasureEnemyRayYawOffset(local)) {
@@ -599,12 +612,21 @@ float Misc::Antiaim::GetYaw(const math::Vector3& view_angles,
     if (compensating) {
       if (this->m_measure_enemy_ != this->m_yawed_enemy_) {
         this->m_roll_adjust_ = 0.0f;
+        this->m_roll_streak_ = 0;
         this->m_yawed_enemy_ = this->m_measure_enemy_;
       }
 
       const auto gap = std::fabsf(*ray_offset);
+      const auto sign = *ray_offset >= 0.0f ? 1 : -1;
 
-      if (gap >= kRollEpsilon) {
+      if (sign != this->m_roll_sign_) {
+        this->m_roll_sign_ = sign;
+        this->m_roll_streak_ = 1;
+      } else {
+        ++this->m_roll_streak_;
+      }
+
+      if (gap >= kRollEpsilon && this->m_roll_streak_ >= 2) {
         const auto gain = gap >= kRollGapCoarse ? kRollGainCoarse
                           : gap >= kRollGapFine ? kRollGainFine
                                                 : kRollGainMicro;
