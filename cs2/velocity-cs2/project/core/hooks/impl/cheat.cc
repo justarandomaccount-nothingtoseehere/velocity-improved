@@ -601,6 +601,9 @@ void __fastcall Cheat::CreateMove(std::uintptr_t thisptr, int slot,
             diag::Step("create_move: rage end");
             diag::Step("create_move: legit begin");
           }
+        }
+
+        {
           diag::SetExceptionPhase("create_move: legit");
           ZoneScopedN("create_move: legit");
           features::combat::g_legit.OnCreateMove(current_cmd);
