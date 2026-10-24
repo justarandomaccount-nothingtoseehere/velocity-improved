@@ -336,6 +336,7 @@ class Misc {
     bool m_antiaim_active_{};
     float m_indicator_yaw_{};
     float m_head_offset_{};
+    float m_roll_adjust_{};
   };
 
  public:
