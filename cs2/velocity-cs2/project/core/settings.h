@@ -1515,6 +1515,10 @@ struct Misc {
       config::val<float> section_gap{16.0f, "glass widget", "section gap"};
       config::val<float> pad_x{14.0f, "glass widget", "padding x"};
       xui::setting show_avatar{true, {}, "show avatar", "glass widget"};
+      xui::setting watermark_x{10.0f, {}, "watermark x", "widgets"};
+      xui::setting watermark_y{10.0f, {}, "watermark y", "widgets"};
+      xui::setting keybinds_x{10.0f, {}, "keybinds x", "widgets"};
+      xui::setting keybinds_y{10.0f, {}, "keybinds y", "widgets"};
     } m_glass{};
   } m_widgets{};
 };
@@ -1564,6 +1568,20 @@ struct Movement {
     xui::setting reset_on_land{
         true, {}, "reset peak on land", "movement - velocity debug"};
   } m_velocity_debug{};
+
+  struct Debug {
+    xui::setting enabled{false, {}, "debug view", "debug"};
+    xui::setting show_bone_revealer{false, {}, "bone ID revealer", "debug"};
+    xui::setting show_pose_params{false, {}, "pose parameters", "debug"};
+    xui::setting show_speed{false, {}, "speed display", "debug"};
+    xui::setting show_bone_ids{false, {}, "show bone IDs", "debug"};
+    config::val<float> speed_scale{1.0f, "debug", "speed scale"};
+    xui::setting bone_id_source{
+        0, {}, "bone ID source", "debug - bone ID source"};
+    config::val<int> bone_id_min{0, "debug", "min bone ID"};
+    config::val<int> bone_id_max{255, "debug", "max bone ID"};
+    xui::setting debug_fov{90.0f, {}, "debug FOV", "debug"};
+  } m_debug{};
 };
 
 struct World {

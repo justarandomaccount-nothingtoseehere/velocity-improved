@@ -95,6 +95,7 @@ void Context::OnPresent(IDXGISwapChain* swap_chain) {
           dl, xdraw::get(xdraw::layer::middle));
       features::esp::player::g_overlay.OnRender(dl);
       features::misc::g_projectile_trajectory.OnRender(dl);
+      features::misc::g_debug.OnRender(dl);
       features::combat::g_rage.OnRender(dl);
       features::combat::g_legit.OnRender(dl);
       features::misc::g_impacts.OnRender(dl);

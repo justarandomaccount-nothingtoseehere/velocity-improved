@@ -14,6 +14,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "core/features/misc/impl/debug.h"
 #include "core/settings.h"
 #include "core/systems/systems.h"
 #include "external/xdraw/xdraw.hpp"
@@ -144,6 +145,8 @@ class ProjectileTrajectory {
   float m_delayed_strength_{1.0f};
   int m_delay_ticks_{};
 };
+
+class Debug;
 
 class Impacts {
  public:
@@ -280,6 +283,12 @@ class Impacts {
   std::vector<math::Vector3> m_buffered_impacts_{};
   math::Vector3 m_buffered_eye_position_{};
   float m_buffered_impact_time_{-1.0f};
+};
+
+class Debug {
+ public:
+  void OnRender(xdraw::draw_list& draw_list);
+  void OnFrameStageNotify();
 };
 
 class Removals {
@@ -503,8 +512,9 @@ class ScoreboardWeapons {
   // whenever it is opened and is resolved from JavaScript at update time.
   CUiEngine* m_ui_engine_{};
   CUiPanel* m_script_panel_{};
-};
 
 }  // namespace features::misc
+
+inline features::misc::Debug g_debug{};
 
 #endif  // VELOCITY_CORE_FEATURES_MISC_MISC_H_

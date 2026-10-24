@@ -62,6 +62,7 @@ inline Camera g_camera{};
 inline Hud g_hud{};
 inline Other g_other{};
 inline ScoreboardWeapons g_scoreboard_weapons{};
+inline Debug g_debug{};
 
 }  // namespace misc
 

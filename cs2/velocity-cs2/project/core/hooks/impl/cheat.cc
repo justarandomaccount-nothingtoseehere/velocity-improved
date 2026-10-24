@@ -377,6 +377,12 @@ LRESULT __stdcall Cheat::WndProc(HWND hwnd, UINT msg, WPARAM wparam,
       case WM_MOUSEWHEEL:
       case WM_MOUSEHWHEEL:
       case WM_MOUSEMOVE:
+      case WM_KEYDOWN:
+      case WM_KEYUP:
+      case WM_CHAR:
+      case WM_SYSKEYDOWN:
+      case WM_SYSKEYUP:
+      case WM_SYSCHAR:
         return 0;
       default:
         break;
@@ -411,6 +417,7 @@ void __fastcall Cheat::FrameStageNotify(std::uintptr_t thisptr, int stage) {
       features::world::g_weather.OnFrameStageNotify();
       features::misc::g_other.OnFrameStageNotify();
       features::misc::g_impacts.OnFrameStageNotify();
+      features::misc::g_debug.OnFrameStageNotify();
     }
   }
 

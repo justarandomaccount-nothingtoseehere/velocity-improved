@@ -121,6 +121,8 @@ constexpr auto kTabMisc =
     R"(<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 7H10M14 7H19M5 12H7M11 12H19M5 17H13M17 17H19M10 5.25V8.75M11 10.25V13.75M17 15.25V18.75" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>)";
 constexpr auto kTabConfig =
     R"(<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4.25 7.25C4.25 6.42157 4.92157 5.75 5.75 5.75H9L11 7.75H18.25C19.0784 7.75 19.75 8.42157 19.75 9.25V17.25C19.75 18.0784 19.0784 18.75 18.25 18.75H5.75C4.92157 18.75 4.25 18.0784 4.25 17.25V7.25Z" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 12.25H16M8 15.25H13" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>)";
+constexpr auto kTabDebug =
+    R"(<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 3.75V6M12 18V20.25M3.75 12H6M18 12H20.25M5.4 5.4L7.05 7.05M16.95 16.95L18.6 18.6M5.4 18.6L7.05 16.95M16.95 7.05L18.6 5.4" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="12" r="6" stroke="white" stroke-width="1.6"/></svg>)";
 
 constexpr auto kCfgFolderBlack =
     R"(<svg width="15" height="13" viewBox="0 0 15 13" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M2.25 0.75H5.25L7.5 3H12.75C13.1478 3 13.5294 3.15804 13.8107 3.43934C14.092 3.72064 14.25 4.10218 14.25 4.5V10.5C14.25 10.8978 14.092 11.2794 13.8107 11.5607C13.5294 11.842 13.1478 12 12.75 12H2.25C1.85218 12 1.47064 11.842 1.18934 11.5607C0.908035 11.2794 0.75 10.8978 0.75 10.5V2.25C0.75 1.85218 0.908035 1.47064 1.18934 1.18934C1.47064 0.908035 1.85218 0.75 2.25 0.75Z" stroke="#111111" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>)";
@@ -974,10 +976,10 @@ void Menu::InitializeGraphics() {
                       &this->m_textures_.cfg_plus.height);
 
   constexpr auto kTabTarget{22.0f};
-  constexpr std::array<const char*, 7> kTabSvgs{
+  constexpr std::array<const char*, 8> kTabSvgs{
       svgs::kTabRage,  svgs::kTabLegit, svgs::kTabPlayer, svgs::kTabWorld,
-      svgs::kTabSkins, svgs::kTabMisc,  svgs::kTabConfig};
-  for (auto i = 0; i < 7; ++i) {
+      svgs::kTabSkins, svgs::kTabMisc,  svgs::kTabConfig, svgs::kTabDebug};
+  for (auto i = 0; i < 8; ++i) {
     this->m_textures_.tabs[i].resource = xdraw::load_svg(
         kTabSvgs[i], kTabTarget / 24.0f, &this->m_textures_.tabs[i].width,
         &this->m_textures_.tabs[i].height);
@@ -1307,7 +1309,7 @@ void Menu::Draw() {
     const auto menu_reveal = xui::ease::out_cubic(this->m_open_anim_);
 
     if (!xui::begin_window("##menu", this->m_x_, this->m_y_, this->m_w_,
-                           this->m_h_, false, 200.0f, 200.0f, menu_reveal)) {
+                           this->m_h_, true, 200.0f, 200.0f, menu_reveal)) {
       return;
     }
 
@@ -1393,6 +1395,9 @@ void Menu::Draw() {
         break;
       case 6:
         this->DrawConfig(col_w);
+        break;
+      case 7:
+        this->DrawDebug(col_w);
         break;
     }
 

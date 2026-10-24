@@ -14,14 +14,91 @@ namespace rendering {
 void Widgets::Draw() {
   auto& dl = xdraw::get();
 
-  if (settings::g_misc.m_watermark.enabled.value) {
-    this->Watermark(dl);
+  const auto& widget_cfg = settings::g_misc.m_widgets.m_glass;
+  const auto wm_x = widget_cfg.watermark_x.value;
+  const auto wm_y = widget_cfg.watermark_y.value;
+  const auto kb_x = widget_cfg.keybinds_x.value;
+  const auto kb_y = widget_cfg.keybinds_y.value;
+
+  // Simple drag for watermark
+  const auto& input = xui::ctx().input;
+  static bool dragging_wm = false;
+  static bool dragging_kb = false;
+
+  // Watermark dimensions for drag detection
+  const auto [screen_w, screen_h] = xdraw::viewport_size();
+  const auto& wm = settings::g_misc.m_watermark;
+  const auto framerate = xdraw::framerate();
+  const auto local = systems::g_local.Get();
+
+  constexpr auto kH{24.0f};
+  constexpr auto kMargin{10.0f};
+  constexpr auto kR{8.0f};
+  constexpr auto kInnerR{6.0f};
+  constexpr auto kInnerPad{2.0f};
+  constexpr auto kTextPadX{8.0f};
+  constexpr auto kTextNudge{0.5f};
+  constexpr auto kSectionSpacing{2.0f};
+  constexpr auto kLogoIconSize{12.0f};
+
+  // Estimate watermark width for drag detection
+  float estimated_wm_w = 200.0f;  // rough estimate
+  float estimated_wm_h = kH;
+
+  // Keybinds dimensions for drag detection
+  float estimated_kb_w = 180.0f;
+  float estimated_kb_h = 100.0f;
+
+  if (rendering::g_menu.IsOpen()) {
+    // Check watermark drag
+    const auto wm_rect = xui::rect{wm_x, wm_y, estimated_wm_w, estimated_wm_h};
+    const auto kb_rect = xui::rect{kb_x, kb_y, estimated_kb_w, estimated_kb_h};
+
+    const auto wm_hovered = input.in_rect(wm_rect);
+    const auto kb_hovered = input.in_rect(kb_rect);
+
+    if (wm_hovered && input.mouse_clicked && !dragging_kb) {
+      dragging_wm = true;
+    }
+    if (kb_hovered && input.mouse_clicked && !dragging_wm) {
+      dragging_kb = true;
+    }
+
+    if (dragging_wm && input.mouse_down) {
+      const auto new_x =
+          std::clamp(input.mouse_x - estimated_wm_w * 0.5f, 0.0f,
+                     static_cast<float>(screen_w) - estimated_wm_w);
+      const auto new_y =
+          std::clamp(input.mouse_y - estimated_wm_h * 0.5f, 0.0f,
+                     static_cast<float>(screen_h) - estimated_wm_h);
+      widget_cfg.watermark_x.value = new_x;
+      widget_cfg.watermark_y.value = new_y;
+    } else {
+      dragging_wm = false;
+    }
+
+    if (dragging_kb && input.mouse_down) {
+      const auto new_x =
+          std::clamp(input.mouse_x - estimated_kb_w * 0.5f, 0.0f,
+                     static_cast<float>(screen_w) - estimated_kb_w);
+      const auto new_y =
+          std::clamp(input.mouse_y - estimated_kb_h * 0.5f, 0.0f,
+                     static_cast<float>(screen_h) - estimated_kb_h);
+      widget_cfg.keybinds_x.value = new_x;
+      widget_cfg.keybinds_y.value = new_y;
+    } else {
+      dragging_kb = false;
+    }
   }
 
-  this->Keybinds(dl);
+  if (settings::g_misc.m_watermark.enabled.value) {
+    this->Watermark(dl, wm_x, wm_y);
+  }
+
+  this->Keybinds(dl, kb_x, kb_y);
 }
 
-void Widgets::Watermark(xdraw::draw_list& draw_list) {
+void Widgets::Watermark(xdraw::draw_list& draw_list, float x, float y) {
   const auto [screen_w, screen_h] = xdraw::viewport_size();
   const auto& s = xui::ctx().style;
   const auto& wm = settings::g_misc.m_watermark;
@@ -185,44 +262,45 @@ void Widgets::Watermark(xdraw::draw_list& draw_list) {
       (target_w - smoothed_w) * std::min(8.0f * xdraw::delta_time(), 1.0f);
 
   const auto w = smoothed_w;
-  const auto x = static_cast<float>(screen_w) - w - kMargin;
-  const auto y = kMargin;
+  const auto x_pos = x;
+  const auto y_pos = y;
 
-  draw_list.rect_filled_blurred(x, y, w, kH, xdraw::corner_radius{kR});
-  draw_list.rect_filled(x, y, w, kH, s.window_bg, xdraw::corner_radius{kR});
+  draw_list.rect_filled_blurred(x_pos, y_pos, w, kH, xdraw::corner_radius{kR});
+  draw_list.rect_filled(x_pos, y_pos, w, kH, s.window_bg,
+                        xdraw::corner_radius{kR});
 
-  auto cx = x + kInnerPad;
+  auto cx = x_pos + kInnerPad;
 
   auto draw_split_pill = [&](const char* value, float vw, float vh,
                              const char* unit, float uw, float uh,
                              float pill_w) {
-    draw_list.rect_filled(cx, y + kInnerPad, pill_w, inner_h, s.child_bg,
+    draw_list.rect_filled(cx, y_pos + kInnerPad, pill_w, inner_h, s.child_bg,
                           xdraw::corner_radius{kInnerR});
-    draw_list.text(cx + kTextPadX, y + (kH - vh) * 0.5f + kTextNudge, value,
+    draw_list.text(cx + kTextPadX, y_pos + (kH - vh) * 0.5f + kTextNudge, value,
                    s.accent);
-    draw_list.text(cx + kTextPadX + vw, y + (kH - uh) * 0.5f + kTextNudge, unit,
-                   s.text_dim);
+    draw_list.text(cx + kTextPadX + vw, y_pos + (kH - uh) * 0.5f + kTextNudge,
+                   unit, s.text_dim);
     cx += pill_w + kSectionSpacing;
   };
 
   auto draw_pill = [&](const char* text, float tw, float th, float pill_w) {
-    draw_list.rect_filled(cx, y + kInnerPad, pill_w, inner_h, s.child_bg,
+    draw_list.rect_filled(cx, y_pos + kInnerPad, pill_w, inner_h, s.child_bg,
                           xdraw::corner_radius{kInnerR});
-    draw_list.text(cx + kTextPadX, y + (kH - th) * 0.5f + kTextNudge, text,
+    draw_list.text(cx + kTextPadX, y_pos + (kH - th) * 0.5f + kTextNudge, text,
                    s.accent);
     cx += pill_w + kSectionSpacing;
   };
 
   // logo pill (always shown)
-  draw_list.rect_filled(cx, y + kInnerPad, logo_pill_w, inner_h, s.accent,
+  draw_list.rect_filled(cx, y_pos + kInnerPad, logo_pill_w, inner_h, s.accent,
                         xdraw::corner_radius{kInnerR});
   if (logo)
     draw_list.image(cx + kLogoIconPad,
-                    y + (kH - static_cast<float>(logo_h)) * 0.5f,
+                    y_pos + (kH - static_cast<float>(logo_h)) * 0.5f,
                     static_cast<float>(logo_w), static_cast<float>(logo_h),
                     logo.Get(), s.checkbox_mark_icon);
   draw_list.text(cx + kLogoIconPad + logo_draw_w + kLogoIconPad,
-                 y + (kH - name_th) * 0.5f + kTextNudge, "velocity.cat",
+                 y_pos + (kH - name_th) * 0.5f + kTextNudge, "velocity.cat",
                  s.checkbox_mark_icon);
   cx += logo_pill_w + kSectionSpacing;
 
@@ -243,7 +321,7 @@ void Widgets::Watermark(xdraw::draw_list& draw_list) {
   if (wm.show_time.value) draw_pill(time_buf, time_tw, time_th, time_pill_w);
 }
 
-void Widgets::Keybinds(xdraw::draw_list& draw_list) {
+void Widgets::Keybinds(xdraw::draw_list& draw_list, float x, float y) {
   struct RowAnimT {
     animation::Fade alpha;
     animation::Spring offset_y;
@@ -433,8 +511,8 @@ void Widgets::Keybinds(xdraw::draw_list& draw_list) {
   smoothed_base_y.SetTarget(target_base_y);
   smoothed_base_y.Update();
 
-  const auto base_ry = smoothed_base_y.Value();
-  const auto x = kMargin;
+  const auto base_ry = y;
+  const auto x_pos = x;
 
   static auto icon_w_px = 0, icon_h_px = 0;
   static const auto kb_icon = xdraw::load_svg(
@@ -448,21 +526,21 @@ void Widgets::Keybinds(xdraw::draw_list& draw_list) {
   const auto inner_h = kRowH - kInnerPad * 2.0f;
   const auto master_u8 = static_cast<std::uint8_t>(255.0f * master_alpha);
 
-  draw_list.rect_filled_blurred(x, base_ry, header_w, kHeaderH,
+  draw_list.rect_filled_blurred(x_pos, base_ry, header_w, kHeaderH,
                                 xdraw::corner_radius{kR},
                                 xdraw::color{255, 255, 255, master_u8});
-  draw_list.rect_filled(x, base_ry, header_w, kHeaderH,
+  draw_list.rect_filled(x_pos, base_ry, header_w, kHeaderH,
                         s.window_bg.alpha(static_cast<std::uint8_t>(
                             s.window_bg.a * master_alpha)),
                         xdraw::corner_radius{kR});
   draw_list.rect_filled(
-      x + kInnerPad, base_ry + kInnerPad, kIconSize, header_inner_h,
+      x_pos + kInnerPad, base_ry + kInnerPad, kIconSize, header_inner_h,
       s.accent.alpha(static_cast<std::uint8_t>(s.accent.a * master_alpha)),
       xdraw::corner_radius{kInnerR});
 
   if (kb_icon) {
     const auto icon_draw = kIconSize - kIconInnerPad * 2.0f;
-    const auto ix = std::floor(x + kInnerPad + kIconInnerPad);
+    const auto ix = std::floor(x_pos + kInnerPad + kIconInnerPad);
     const auto iy = std::floor(base_ry + kInnerPad +
                                (header_inner_h - icon_draw) * 0.5f + 1.0f);
     draw_list.image(ix, iy, icon_draw, icon_draw, kb_icon.Get(),
@@ -470,7 +548,7 @@ void Widgets::Keybinds(xdraw::draw_list& draw_list) {
                         s.checkbox_mark_icon.a * master_alpha)));
   }
 
-  const auto htx = x + kInnerPad + kIconSize + kInnerPad;
+  const auto htx = x_pos + kInnerPad + kIconSize + kInnerPad;
   const auto htw = header_tw + kTextPadX * 2.0f;
   draw_list.rect_filled(
       htx, base_ry + kInnerPad, htw, header_inner_h,
@@ -509,23 +587,23 @@ void Widgets::Keybinds(xdraw::draw_list& draw_list) {
       const auto row_w =
           kInnerPad + name_pill_w + kInnerPad + value_pill_w + kInnerPad;
 
-      draw_list.rect_filled_blurred(x, draw_y, row_w, kRowH,
+      draw_list.rect_filled_blurred(x_pos, draw_y, row_w, kRowH,
                                     xdraw::corner_radius{kR},
                                     xdraw::color{255, 255, 255, row_u8});
-      draw_list.rect_filled(x, draw_y, row_w, kRowH,
+      draw_list.rect_filled(x_pos, draw_y, row_w, kRowH,
                             s.window_bg.alpha(static_cast<std::uint8_t>(
                                 s.window_bg.a * row_alpha)),
                             xdraw::corner_radius{kR});
       draw_list.rect_filled(
-          x + kInnerPad, draw_y + kInnerPad, name_pill_w, inner_h,
+          x_pos + kInnerPad, draw_y + kInnerPad, name_pill_w, inner_h,
           s.child_bg.alpha(static_cast<std::uint8_t>(s.child_bg.a * row_alpha)),
           xdraw::corner_radius{kInnerR});
       draw_list.text(
-          x + kInnerPad + kTextPadX, draw_y + (kRowH - nh) * 0.5f + kTextNudge,
-          e.name,
+          x_pos + kInnerPad + kTextPadX,
+          draw_y + (kRowH - nh) * 0.5f + kTextNudge, e.name,
           s.accent.alpha(static_cast<std::uint8_t>(s.accent.a * row_alpha)));
 
-      const auto vpx = x + kInnerPad + name_pill_w + kInnerPad;
+      const auto vpx = x_pos + kInnerPad + name_pill_w + kInnerPad;
       draw_list.rect_filled(
           vpx, draw_y + kInnerPad, value_pill_w, inner_h,
           s.accent.alpha(static_cast<std::uint8_t>(s.accent.a * row_alpha)),
@@ -540,20 +618,20 @@ void Widgets::Keybinds(xdraw::draw_list& draw_list) {
       const auto text_col =
           (e.mode == xui::bind_mode::toggle) ? s.text_dim : s.accent;
 
-      draw_list.rect_filled_blurred(x, draw_y, row_w, kRowH,
+      draw_list.rect_filled_blurred(x_pos, draw_y, row_w, kRowH,
                                     xdraw::corner_radius{kR},
                                     xdraw::color{255, 255, 255, row_u8});
-      draw_list.rect_filled(x, draw_y, row_w, kRowH,
+      draw_list.rect_filled(x_pos, draw_y, row_w, kRowH,
                             s.window_bg.alpha(static_cast<std::uint8_t>(
                                 s.window_bg.a * row_alpha)),
                             xdraw::corner_radius{kR});
       draw_list.rect_filled(
-          x + kInnerPad, draw_y + kInnerPad, name_pill_w, inner_h,
+          x_pos + kInnerPad, draw_y + kInnerPad, name_pill_w, inner_h,
           s.child_bg.alpha(static_cast<std::uint8_t>(s.child_bg.a * row_alpha)),
           xdraw::corner_radius{kInnerR});
       draw_list.text(
-          x + kInnerPad + kTextPadX, draw_y + (kRowH - nh) * 0.5f + kTextNudge,
-          e.name,
+          x_pos + kInnerPad + kTextPadX,
+          draw_y + (kRowH - nh) * 0.5f + kTextNudge, e.name,
           text_col.alpha(static_cast<std::uint8_t>(text_col.a * row_alpha)));
     }
 
@@ -577,10 +655,10 @@ void Widgets::Keybinds(xdraw::draw_list& draw_list) {
       const auto [nw, nh] = xdraw::measure_text(it->first.c_str());
       const auto row_w = kInnerPad + (nw + kTextPadX * 2.0f) + kInnerPad;
 
-      draw_list.rect_filled_blurred(x, draw_y, row_w, kRowH,
+      draw_list.rect_filled_blurred(x_pos, draw_y, row_w, kRowH,
                                     xdraw::corner_radius{kR},
                                     xdraw::color{255, 255, 255, row_u8});
-      draw_list.rect_filled(x, draw_y, row_w, kRowH,
+      draw_list.rect_filled(x_pos, draw_y, row_w, kRowH,
                             s.window_bg.alpha(static_cast<std::uint8_t>(
                                 s.window_bg.a * row_alpha)),
                             xdraw::corner_radius{kR});

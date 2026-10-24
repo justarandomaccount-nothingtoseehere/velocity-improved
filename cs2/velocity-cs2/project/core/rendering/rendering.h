@@ -61,6 +61,7 @@ class Menu {
     kSkins,
     kMisc,
     kConfig,
+    kDebug,
     kCount
   };
 
@@ -85,6 +86,7 @@ class Menu {
   float DrawSkinEditor(float x, float y, float width, float height,
                        std::int16_t browsing_definition) const;
   void DrawMisc(float group_w) const;
+  void DrawDebug(float group_w) const;
   void DrawConfig(float group_w);
 
   bool m_open_{true};
@@ -142,7 +144,7 @@ class Menu {
 
     Entry logo{};
     Entry user{};
-    Entry tabs[7]{};
+    Entry tabs[8]{};
     Entry search{};
     Entry settings{};
     Entry cfg_folder_on{};
@@ -166,8 +168,9 @@ class Menu {
       {{"enemies", "allies", "local"}, 3},
       {{"esp", "scene", "weather"}, 3},
       {{"guns", "knives", "gloves", "agents"}, 4},
-      {{"main", "removals", "camera", "hud"}, 4},
-      {{"general"}, 1}};
+      {{"main", "removals", "camera", "hud", "debug"}, 5},
+      {{"general"}, 1},
+      {{"main"}, 1}};
 };
 
 class Widgets {
