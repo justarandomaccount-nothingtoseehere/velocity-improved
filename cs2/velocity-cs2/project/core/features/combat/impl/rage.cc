@@ -6,6 +6,7 @@
 #include "utilities/addresses/addresses.h"
 #include "utilities/logging/logging.h"
 #include "utilities/memory/memory.h"
+#include "utilities/random/random.h"
 #include "utilities/threadpool/threadpool.h"
 namespace features::combat {
 
