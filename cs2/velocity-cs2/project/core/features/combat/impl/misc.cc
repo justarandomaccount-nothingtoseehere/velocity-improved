@@ -594,6 +594,9 @@ float Misc::Antiaim::GetYaw(const math::Vector3& view_angles,
 
   static constexpr auto kRollEpsilon{0.05f};
   static constexpr auto kRollMaxStep{12.0f};
+  static constexpr auto kRollCoarseScale{0.8f};
+  static constexpr auto kRollFineGap{2.0f};
+  static constexpr auto kRollCreepStep{0.1f};
 
   const auto compensating = aa.auto_yaw_adjust.value && !aa.spin.value;
 
@@ -626,8 +629,10 @@ float Misc::Antiaim::GetYaw(const math::Vector3& view_angles,
       const auto min_streak = jittering ? 1 : 2;
 
       if (gap >= kRollEpsilon && this->m_roll_streak_ >= min_streak) {
-        this->m_roll_adjust_ +=
-            std::clamp(*ray_offset, -kRollMaxStep, kRollMaxStep);
+        const auto step = gap > kRollFineGap
+                              ? kRollMaxStep * kRollCoarseScale
+                              : std::copysignf(kRollCreepStep, *ray_offset);
+        this->m_roll_adjust_ += step;
       }
     }
 
