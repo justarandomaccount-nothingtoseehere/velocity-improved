@@ -15,98 +15,72 @@ void Widgets::Draw() {
   auto& dl = xdraw::get();
 
   const auto& widget_cfg = settings::g_misc.m_widgets.m_glass;
-  const auto wm_x = widget_cfg.watermark_x.value;
-  const auto wm_y = widget_cfg.watermark_y.value;
-  const auto kb_x = widget_cfg.keybinds_x.value;
-  const auto kb_y = widget_cfg.keybinds_y.value;
-
-  // Simple drag for watermark
-  const auto& input = xui::ctx().input;
-  static bool dragging_wm = false;
-  static bool dragging_kb = false;
-
-  // Watermark dimensions for drag detection
   const auto [screen_w, screen_h] = xdraw::viewport_size();
-  const auto& wm = settings::g_misc.m_watermark;
-  const auto framerate = xdraw::framerate();
-  const auto local = systems::g_local.Get();
+  const auto& input = xui::ctx().input;
 
-  constexpr auto kH{24.0f};
-  constexpr auto kMargin{10.0f};
-  constexpr auto kR{8.0f};
-  constexpr auto kInnerR{6.0f};
-  constexpr auto kInnerPad{2.0f};
-  constexpr auto kTextPadX{8.0f};
-  constexpr auto kTextNudge{0.5f};
-  constexpr auto kSectionSpacing{2.0f};
-  constexpr auto kLogoIconSize{12.0f};
+  if (g_menu.IsOpen()) {
+    static auto dragging_wm{false};
+    static auto dragging_kb{false};
+    static auto grab_dx{0.0f};
+    static auto grab_dy{0.0f};
 
-  // Estimate watermark width for drag detection
-  float estimated_wm_w = 200.0f;  // rough estimate
-  float estimated_wm_h = kH;
+    const auto wm_rect =
+        xui::rect{widget_cfg.watermark_x.value, widget_cfg.watermark_y.value,
+                  this->m_wm_w_, this->m_wm_h_};
+    const auto kb_rect =
+        xui::rect{widget_cfg.keybinds_x.value, widget_cfg.keybinds_y.value,
+                  this->m_kb_w_, this->m_kb_h_};
 
-  // Keybinds dimensions for drag detection
-  float estimated_kb_w = 180.0f;
-  float estimated_kb_h = 100.0f;
-
-  if (rendering::g_menu.IsOpen()) {
-    // Check watermark drag
-    const auto wm_rect = xui::rect{wm_x, wm_y, estimated_wm_w, estimated_wm_h};
-    const auto kb_rect = xui::rect{kb_x, kb_y, estimated_kb_w, estimated_kb_h};
-
-    const auto wm_hovered = input.in_rect(wm_rect);
-    const auto kb_hovered = input.in_rect(kb_rect);
-
-    if (wm_hovered && input.mouse_clicked && !dragging_kb) {
-      dragging_wm = true;
-    }
-    if (kb_hovered && input.mouse_clicked && !dragging_wm) {
-      dragging_kb = true;
+    if (!dragging_wm && !dragging_kb && input.mouse_clicked) {
+      if (input.in_rect(wm_rect)) {
+        dragging_wm = true;
+        grab_dx = input.mouse_x - widget_cfg.watermark_x.value;
+        grab_dy = input.mouse_y - widget_cfg.watermark_y.value;
+      } else if (input.in_rect(kb_rect)) {
+        dragging_kb = true;
+        grab_dx = input.mouse_x - widget_cfg.keybinds_x.value;
+        grab_dy = input.mouse_y - widget_cfg.keybinds_y.value;
+      }
     }
 
     if (dragging_wm && input.mouse_down) {
-      const auto new_x =
-          std::clamp(input.mouse_x - estimated_wm_w * 0.5f, 0.0f,
-                     static_cast<float>(screen_w) - estimated_wm_w);
-      const auto new_y =
-          std::clamp(input.mouse_y - estimated_wm_h * 0.5f, 0.0f,
-                     static_cast<float>(screen_h) - estimated_wm_h);
-      widget_cfg.watermark_x.value = new_x;
-      widget_cfg.watermark_y.value = new_y;
+      widget_cfg.watermark_x.value = std::clamp(
+          input.mouse_x - grab_dx, 0.0f,
+          std::max(static_cast<float>(screen_w) - this->m_wm_w_, 0.0f));
+      widget_cfg.watermark_y.value = std::clamp(
+          input.mouse_y - grab_dy, 0.0f,
+          std::max(static_cast<float>(screen_h) - this->m_wm_h_, 0.0f));
     } else {
       dragging_wm = false;
     }
 
     if (dragging_kb && input.mouse_down) {
-      const auto new_x =
-          std::clamp(input.mouse_x - estimated_kb_w * 0.5f, 0.0f,
-                     static_cast<float>(screen_w) - estimated_kb_w);
-      const auto new_y =
-          std::clamp(input.mouse_y - estimated_kb_h * 0.5f, 0.0f,
-                     static_cast<float>(screen_h) - estimated_kb_h);
-      widget_cfg.keybinds_x.value = new_x;
-      widget_cfg.keybinds_y.value = new_y;
+      widget_cfg.keybinds_x.value = std::clamp(
+          input.mouse_x - grab_dx, 0.0f,
+          std::max(static_cast<float>(screen_w) - this->m_kb_w_, 0.0f));
+      widget_cfg.keybinds_y.value = std::clamp(
+          input.mouse_y - grab_dy, 0.0f,
+          std::max(static_cast<float>(screen_h) - this->m_kb_h_, 0.0f));
     } else {
       dragging_kb = false;
     }
   }
 
-  if (settings::g_misc.m_watermark.enabled.value) {
-    this->Watermark(dl, wm_x, wm_y);
+  if (settings::g_misc.m_watermark.enabled) {
+    this->Watermark(dl, widget_cfg.watermark_x.value,
+                    widget_cfg.watermark_y.value);
   }
 
-  this->Keybinds(dl, kb_x, kb_y);
+  this->Keybinds(dl, widget_cfg.keybinds_x.value, widget_cfg.keybinds_y.value);
 }
 
 void Widgets::Watermark(xdraw::draw_list& draw_list, float x, float y) {
-  const auto [screen_w, screen_h] = xdraw::viewport_size();
   const auto& s = xui::ctx().style;
   const auto& wm = settings::g_misc.m_watermark;
   const auto framerate = xdraw::framerate();
   const auto local = systems::g_local.Get();
 
   constexpr auto kH{24.0f};
-  constexpr auto kMargin{10.0f};
   constexpr auto kR{8.0f};
   constexpr auto kInnerR{6.0f};
   constexpr auto kInnerPad{2.0f};
@@ -116,7 +90,6 @@ void Widgets::Watermark(xdraw::draw_list& draw_list, float x, float y) {
   constexpr auto kLogoIconSize{12.0f};
   constexpr auto kLogoIconPad{7.0f};
 
-  // ── time ────────────────────────────────────────────────────────────
   SYSTEMTIME st{};
   GetLocalTime(&st);
   char time_buf[8]{};
@@ -130,7 +103,6 @@ void Widgets::Watermark(xdraw::draw_list& draw_list, float x, float y) {
   char fps_val[8]{};
   std::snprintf(fps_val, sizeof(fps_val), "%.0f", smoothed_fps);
 
-  // ── ping ────────────────────────────────────────────────────────────
   auto ping{0};
   if (local.is_alive && local.controller &&
       systems::g_entities.Exists(local.controller))
@@ -265,6 +237,9 @@ void Widgets::Watermark(xdraw::draw_list& draw_list, float x, float y) {
   const auto x_pos = x;
   const auto y_pos = y;
 
+  this->m_wm_w_ = w;
+  this->m_wm_h_ = kH;
+
   draw_list.rect_filled_blurred(x_pos, y_pos, w, kH, xdraw::corner_radius{kR});
   draw_list.rect_filled(x_pos, y_pos, w, kH, s.window_bg,
                         xdraw::corner_radius{kR});
@@ -330,12 +305,9 @@ void Widgets::Keybinds(xdraw::draw_list& draw_list, float x, float y) {
 
   static std::map<std::string, RowAnimT> row_states;
   static animation::Fade container_alpha;
-  static animation::Spring smoothed_base_y;
 
-  const auto [screen_w, screen_h] = xdraw::viewport_size();
   const auto& s = xui::ctx().style;
 
-  constexpr auto kMargin{10.0f};
   constexpr auto kRowSpacing{3.0f};
   constexpr auto kRowH{21.0f};
   constexpr auto kHeaderH{24.0f};
@@ -503,13 +475,6 @@ void Widgets::Keybinds(xdraw::draw_list& draw_list, float x, float y) {
   if (!container_alpha.Visible()) return;
 
   const auto master_alpha = container_alpha.Alpha();
-  const auto total_h = kHeaderH + kRowSpacing +
-                       (static_cast<float>(count) * (kRowH + kRowSpacing));
-  const auto target_base_y =
-      (static_cast<float>(screen_h) * 0.5f) - (total_h * 0.5f);
-
-  smoothed_base_y.SetTarget(target_base_y);
-  smoothed_base_y.Update();
 
   const auto base_ry = y;
   const auto x_pos = x;
@@ -561,6 +526,7 @@ void Widgets::Keybinds(xdraw::draw_list& draw_list, float x, float y) {
 
   for (auto& [name, state] : row_states) state.active_this_frame = false;
 
+  auto kb_w = header_w;
   float current_offset_y = kHeaderH + kRowSpacing;
   for (auto i = 0; i < count; ++i) {
     const auto& e = entries[i];
@@ -586,6 +552,7 @@ void Widgets::Keybinds(xdraw::draw_list& draw_list, float x, float y) {
       const auto value_pill_w = vw + kTextPadX * 2.0f;
       const auto row_w =
           kInnerPad + name_pill_w + kInnerPad + value_pill_w + kInnerPad;
+      kb_w = std::max(kb_w, row_w);
 
       draw_list.rect_filled_blurred(x_pos, draw_y, row_w, kRowH,
                                     xdraw::corner_radius{kR},
@@ -615,6 +582,7 @@ void Widgets::Keybinds(xdraw::draw_list& draw_list, float x, float y) {
     } else {
       const auto name_pill_w = nw + kTextPadX * 2.0f;
       const auto row_w = kInnerPad + name_pill_w + kInnerPad;
+      kb_w = std::max(kb_w, row_w);
       const auto text_col =
           (e.mode == xui::bind_mode::toggle) ? s.text_dim : s.accent;
 
@@ -637,6 +605,10 @@ void Widgets::Keybinds(xdraw::draw_list& draw_list, float x, float y) {
 
     current_offset_y += kRowH + kRowSpacing;
   }
+
+  this->m_kb_w_ = kb_w;
+  this->m_kb_h_ = kHeaderH + kRowSpacing +
+                  static_cast<float>(count) * (kRowH + kRowSpacing);
 
   for (auto it = row_states.begin(); it != row_states.end();) {
     if (!it->second.active_this_frame) {

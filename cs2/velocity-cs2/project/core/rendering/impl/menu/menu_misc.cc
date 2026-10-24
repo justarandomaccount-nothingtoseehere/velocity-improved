@@ -39,38 +39,18 @@ void DrawCustomSoundPicker(config::str& file_setting,
       }
     }
 
-    if (subtab == 4) {
-      auto& dbg = settings::g_misc.m_debug;
-
-      xui::begin_child("##misc_debug", col_w) {
-        xui::checkbox("debug view", dbg.enabled);
-        xui::checkbox("bone ID revealer", dbg.show_bone_revealer);
-        xui::checkbox("pose parameters", dbg.show_pose_params);
-        xui::checkbox("speed display", dbg.show_speed);
-        xui::checkbox("show bone IDs", dbg.show_bone_ids);
-        xui::slider_float("speed scale", dbg.speed_scale, 0.1f, 5.0f, "%.2f");
-        static constexpr const char* kBoneIdSources[]{"nearest", "random",
-                                                      "closest to crosshair"};
-        xui::combo("bone ID source", dbg.bone_id_source.value, kBoneIdSources,
-                   3);
-        xui::slider_int("min bone ID", dbg.bone_id_min, 0, 255, "%d");
-        xui::slider_int("max bone ID", dbg.bone_id_max, 0, 255, "%d");
-        xui::slider_float("debug FOV", dbg.debug_fov, 10.0f, 120.0f, "%.1f");
-      };
+    if (xui::combo(combo_label, selected, cached_ptrs.data(),
+                   static_cast<int>(cached_ptrs.size()))) {
+      file_setting = cached_files[static_cast<std::size_t>(selected)];
     }
   }
 
-  if (xui::combo(combo_label, selected, cached_ptrs.data(),
-                 static_cast<int>(cached_ptrs.size()))) {
-    file_setting = cached_files[static_cast<std::size_t>(selected)];
+  xui::text_input("file", file_setting.value, 64, "hit.wav");
+
+  if (xui::button(preview_id, 96.0f, 22.0f)) {
+    features::misc::g_impacts.PlayCustomSound(file_setting.value,
+                                              preview_volume);
   }
-}
-
-xui::text_input("file", file_setting.value, 64, "hit.wav");
-
-if (xui::button(preview_id, 96.0f, 22.0f)) {
-  features::misc::g_impacts.PlayCustomSound(file_setting.value, preview_volume);
-}
 }
 constexpr const char* kMarkerTypes[]{"classic", "damage", "both"};
 constexpr const char* kImpactTypes[]{"overlay", "sparks", "both"};
@@ -522,26 +502,40 @@ void Menu::DrawMisc(float group_w) const {
       xui::end_child();
     }
   }
+
+  if (subtab == 4) {
+    auto& dbg = m.m_debug;
+
+    if (xui::begin_child("##misc_debug", col_w)) {
+      xui::checkbox("debug view", dbg.enabled);
+      if (xui::begin_popup("##debug_view_popup", 220.0f)) {
+        static constexpr const char* kBoneIdSources[]{"head", "neck", "pelvis"};
+        xui::combo("bone ID source", dbg.bone_id_source.value, kBoneIdSources,
+                   3);
+        xui::slider_int("min bone ID", dbg.bone_id_min, 0, 26, "%d");
+        xui::slider_int("max bone ID", dbg.bone_id_max, 0, 26, "%d");
+        xui::layout::separator();
+        xui::slider_float("speed scale", dbg.speed_scale, 0.1f, 5.0f, "%.2f");
+        xui::end_popup();
+      }
+
+      xui::checkbox("bone ID revealer", dbg.show_bone_revealer);
+      xui::checkbox("pose parameters", dbg.show_pose_params);
+      xui::checkbox("speed display", dbg.show_speed);
+      xui::checkbox("show bone IDs", dbg.show_bone_ids);
+
+      xui::end_child();
+    }
+  }
 }
 
 void Menu::DrawDebug(float group_w) const {
   auto& dbg = settings::g_misc.m_debug;
 
-  xui::layout::set_cursor(this->m_body_x_ - this->m_x_,
-                          this->m_body_y_ - this->m_y_);
-
   if (xui::begin_child("##debug_content", group_w)) {
-    xui::text("Debug Visualization", tokens::col_accent);
-    xui::layout::separator();
-
     xui::checkbox("debug view", dbg.enabled);
-    if (xui::begin_popup("##debug_view_popup", 220.0f)) {
-      xui::checkbox("bone ID revealer", dbg.show_bone_revealer);
-      xui::checkbox("pose parameters", dbg.show_pose_params);
-      xui::checkbox("speed display", dbg.show_speed);
-      xui::checkbox("show bone IDs", dbg.show_bone_ids);
-      xui::end_popup();
-    }
+
+    xui::layout::separator();
 
     xui::checkbox("bone ID revealer", dbg.show_bone_revealer);
     xui::checkbox("pose parameters", dbg.show_pose_params);
@@ -550,13 +544,13 @@ void Menu::DrawDebug(float group_w) const {
 
     xui::layout::separator();
 
-    xui::slider_float("speed scale", dbg.speed_scale, 0.1f, 5.0f, "%.2f");
-    static constexpr const char* kBoneIdSources[]{"nearest", "random",
-                                                  "closest to crosshair"};
+    static constexpr const char* kBoneIdSources[]{"head", "neck", "pelvis"};
     xui::combo("bone ID source", dbg.bone_id_source.value, kBoneIdSources, 3);
-    xui::slider_int("min bone ID", dbg.bone_id_min, 0, 255, "%d");
-    xui::slider_int("max bone ID", dbg.bone_id_max, 0, 255, "%d");
-    xui::slider_float("debug FOV", dbg.debug_fov, 10.0f, 120.0f, "%.1f");
+    xui::slider_int("min bone ID", dbg.bone_id_min, 0, 26, "%d");
+    xui::slider_int("max bone ID", dbg.bone_id_max, 0, 26, "%d");
+    xui::slider_float("speed scale", dbg.speed_scale, 0.1f, 5.0f, "%.2f");
+
+    xui::end_child();
   }
 }
 

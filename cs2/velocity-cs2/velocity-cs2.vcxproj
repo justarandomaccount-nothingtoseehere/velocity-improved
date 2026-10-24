@@ -250,7 +250,6 @@
     <ClInclude Include="project\core\features\esp\esp.h" />
     <ClInclude Include="project\core\features\features.h" />
     <ClInclude Include="project\core\features\misc\misc.h" />
-    <ClInclude Include="project\core\features\misc\impl\debug.h" />
     <ClInclude Include="project\core\features\movement\movement.h" />
     <ClInclude Include="project\core\features\world\world.h" />
     <ClInclude Include="project\core\hooks\hooks.h" />

@@ -180,8 +180,13 @@ class Widgets {
   static inline std::string s_map_name_{};
 
  private:
-  void Watermark(xdraw::draw_list& draw_list);
-  void Keybinds(xdraw::draw_list& draw_list);
+  void Watermark(xdraw::draw_list& draw_list, float x, float y);
+  void Keybinds(xdraw::draw_list& draw_list, float x, float y);
+
+  float m_wm_w_{};
+  float m_wm_h_{};
+  float m_kb_w_{};
+  float m_kb_h_{};
 };
 
 class Fonts {

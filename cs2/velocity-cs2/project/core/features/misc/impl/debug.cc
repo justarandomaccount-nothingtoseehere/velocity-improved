@@ -1,191 +1,165 @@
-#define NOMINMAX
 #include "pch/pch.h"
 
-#include "core/features/misc/impl/debug.h"
-
-#include "core/rendering/rendering.h"
+#include "core/features/features.h"
+#include "core/settings.h"
 #include "core/systems/systems.h"
 #include "utilities/math/math.h"
 
-namespace features::misc::impl {
+namespace features::misc {
 
 void Debug::OnRender(xdraw::draw_list& draw_list) {
-  if (!settings::g_misc.m_debug.enabled) {
+  auto& cfg = settings::g_misc.m_debug;
+
+  if (!cfg.enabled) {
     return;
   }
 
-  const auto& local = systems::g_local.Get();
-  if (!local.IsValid()) {
+  const auto local = systems::g_local.Get();
+  if (!local.IsValid() || !systems::g_view.HasCamera()) {
     return;
   }
 
-  const auto scale = settings::g_misc.m_debug.speed_scale;
-  const auto draw_scale = 1.0f / scale;
-
-  if (settings::g_misc.m_debug.show_bone_revealer) {
-    RenderBoneRevealer(draw_list, local);
+  if (cfg.show_pose_params) {
+    this->RenderPoseParameters(draw_list, local);
   }
 
-  if (settings::g_misc.m_debug.show_pose_params) {
-    RenderPoseParameters(draw_list, local);
+  if (cfg.show_speed) {
+    this->RenderSpeedDisplay(draw_list, local);
   }
 
-  if (settings::g_misc.m_debug.show_speed) {
-    RenderSpeedDisplay(draw_list, local);
+  if (cfg.show_bone_revealer || cfg.show_bone_ids) {
+    this->RenderBoneRevealer(draw_list, local);
   }
 
-  if (settings::g_misc.m_debug.show_bone_ids) {
-    RenderBoneGrid(draw_list, local);
+  if (cfg.show_bone_revealer) {
+    this->RenderBoneGrid(draw_list, local);
   }
 }
 
 void Debug::OnFrameStageNotify() {
   const auto now = std::chrono::steady_clock::now();
   const auto elapsed =
-      std::chrono::duration_cast<std::chrono::seconds>(now - m_last_fps_update_)
-          .count();
+      std::chrono::duration<float>(now - this->m_last_fps_update_).count();
 
   if (elapsed >= 1.0f) {
-    m_fps_ = m_fps_ * 0.9f + (60.0f / static_cast<float>(elapsed)) * 0.1f;
-    m_last_fps_update_ = now;
+    this->m_fps_ = static_cast<float>(this->m_frames_) / elapsed;
+    this->m_frames_ = 0;
+    this->m_last_fps_update_ = now;
   }
+
+  ++this->m_frames_;
 }
 
 void Debug::RenderBoneRevealer(xdraw::draw_list& draw_list,
                                const systems::Local::Snapshot& local) {
-  const auto skeleton = systems::g_bones.GetSkeleton(local);
+  auto& cfg = settings::g_misc.m_debug;
 
-  for (int bone_id = settings::g_misc.m_debug.bone_id_min;
-       bone_id <= settings::g_misc.m_debug.bone_id_max; ++bone_id) {
-    if (bone_id >= skeleton.size()) {
+  const auto skeleton = systems::g_bones.GetSkeleton(local.ViewPawn());
+
+  const auto radius = 4.0f * cfg.speed_scale;
+
+  const auto min_id = std::clamp<int>(cfg.bone_id_min, 0,
+                                      static_cast<int>(skeleton.size()) - 1);
+  const auto max_id = std::clamp<int>(cfg.bone_id_max, 0,
+                                      static_cast<int>(skeleton.size()) - 1);
+
+  for (auto bone_id = min_id; bone_id <= max_id; ++bone_id) {
+    const auto screen = systems::g_view.ProjectFull(skeleton[bone_id].position);
+
+    if (!screen.on_screen || screen.w <= 0.0f) {
       continue;
     }
 
-    const auto& bone_data = skeleton[bone_id];
-
-    const auto screen_pos = systems::g_view.WorldToScreen(bone_data.position);
-    if (!screen_pos.has_value()) {
-      continue;
+    if (cfg.show_bone_revealer) {
+      draw_list.circle_filled(screen.screen.x, screen.screen.y, radius,
+                              xdraw::color{173, 192, 255, 200});
     }
 
-    auto yaw_norm = bone_data.rotation.y;
-    math::NormalizeAngle(yaw_norm);
-    const auto color = yaw_norm < 0.5f ? xdraw::color{255, 255, 255, 255}
-                                       : xdraw::color{255, 0, 0, 255};
+    if (cfg.show_bone_ids) {
+      const auto label = std::format("{}", bone_id);
+      const auto [tw, th] = xdraw::measure_text(label);
 
-    const auto bone_pos = screen_pos.value();
-
-    const auto radius = settings::g_misc.m_debug.speed_scale * 5.0f;
-
-    const auto outline_width = settings::g_misc.m_debug.speed_scale * 2.0f;
-
-    draw_list.circle_filled(bone_pos.x, bone_pos.y, radius, color);
-
-    if (settings::g_misc.m_debug.show_bone_ids) {
-      const auto text_pos = bone_pos.x - 10.0f;
-      draw_list.text("{}", text_pos, bone_pos.y - radius - 5.0f, 0.8f,
-                     xdraw::color{255, 255, 255, 255},
-                     static_cast<int>(bone_id));
+      draw_list.text(screen.screen.x - tw * 0.5f, screen.screen.y - radius - th,
+                     label, xdraw::color{235, 238, 248, 255});
     }
   }
 }
 
 void Debug::RenderPoseParameters(xdraw::draw_list& draw_list,
                                  const systems::Local::Snapshot& local) {
-  const auto screen_center_x = xdraw::viewport_size().width * 0.5f;
-  const auto screen_center_y = xdraw::viewport_size().height * 0.5f;
+  const auto& cfg = settings::g_misc.m_debug;
 
-  const auto& skeleton = systems::g_bones.GetSkeleton(local);
+  static constexpr int kBones[]{
+      cstypes::bone_ids::kHead,
+      cstypes::bone_ids::kNeck,
+      cstypes::bone_ids::kPelvis,
+  };
 
-  const auto head_bone_id =
-      static_cast<size_t>(systems::cstypes::bone_ids::kHead);
+  const auto skeleton = systems::g_bones.GetSkeleton(local.ViewPawn());
 
-  if (head_bone_id < skeleton.size()) {
-    const auto& head_bone = skeleton[head_bone_id];
+  const auto source_id = std::clamp<int>(
+      cfg.bone_id_source, 0, static_cast<int>(std::size(kBones)) - 1);
+  const auto& bone = skeleton[kBones[source_id]];
 
-    const auto yaw = head_bone.rotation.y;
-    const auto pitch = head_bone.rotation.x;
-    const auto roll = head_bone.rotation.z;
+  const auto yaw = std::fmod(math::RadToDeg(bone.rotation.y) + 360.0f, 360.0f);
+  const auto pitch =
+      std::fmod(math::RadToDeg(bone.rotation.x) + 360.0f, 360.0f);
+  const auto roll = std::fmod(math::RadToDeg(bone.rotation.z) + 360.0f, 360.0f);
 
-    auto yaw_norm = yaw;
-    auto pitch_norm = pitch;
-    auto roll_norm = roll;
-    math::NormalizeAngle(yaw_norm);
-    math::NormalizeAngle(pitch_norm);
-    math::NormalizeAngle(roll_norm);
+  const auto pose_text =
+      std::format("{:.1f} / {:.1f} / {:.1f}", pitch, yaw, roll);
 
-    const auto screen_pos = systems::g_view.WorldToScreen(head_bone.position);
-    if (!screen_pos.has_value()) {
-      return;
-    }
+  const auto [tw, th] = xdraw::measure_text(pose_text);
 
-    const auto pose_text =
-        std::format("Pitch: {:.1f}°, Yaw: {:.1f}°, Roll: {:.1f}°",
-                    pitch_norm * 180.0f, yaw_norm * 180.0f, roll_norm * 180.0f);
-
-    const auto text_size = draw_list.text_size(pose_text.c_str(), 1.0f);
-
-    const auto text_x = screen_pos->x - text_size.width * 0.5f;
-    const auto text_y = screen_pos->y - 30.0f;
-
-    draw_list.text(pose_text.c_str(), text_x, text_y, 1.0f,
-                   xdraw::color{173, 192, 255, 255});
-
-    const auto arrow_size = 20.0f;
-
-    const auto arrow_x = screen_pos->x;
-    const auto arrow_y = screen_pos->y - 20.0f;
-
-    draw_list.triangle(arrow_x, arrow_y, arrow_x - arrow_size / 2,
-                       arrow_y + arrow_size, arrow_x + arrow_size / 2,
-                       arrow_y + arrow_size, xdraw::color{173, 192, 255, 255});
+  const auto screen = systems::g_view.ProjectFull(bone.position);
+  if (!screen.on_screen || screen.w <= 0.0f) {
+    return;
   }
+
+  const auto tx = screen.screen.x - tw * 0.5f;
+  const auto ty = screen.screen.y - 30.0f;
+
+  draw_list.text(tx, ty, pose_text, xdraw::color{173, 192, 255, 255});
 }
 
 void Debug::RenderSpeedDisplay(xdraw::draw_list& draw_list,
                                const systems::Local::Snapshot& local) {
-  const auto& velocity = local.velocity;
+  const auto& cfg = settings::g_misc.m_debug;
 
-  const auto speed = math::Vector3(velocity.x, velocity.y, velocity.z).Length();
+  const auto& prestate = systems::g_prediction.Pre();
+  const auto speed = prestate.velocity.Length2d();
+  const auto scaled_speed = speed * cfg.speed_scale;
 
-  const auto speed_scaled = speed * settings::g_misc.m_debug.speed_scale;
+  const auto speed_text = std::format("{:.1f} u/s", scaled_speed);
 
-  const auto screen_x = xdraw::viewport_size().width * 0.5f;
-  const auto screen_y = xdraw::viewport_size().height * 0.5f;
+  const auto [tw, th] = xdraw::measure_text(speed_text);
 
-  const auto speed_text =
-      std::format("Speed: {:.1f} units/s (FPS: {:.0f})", speed_scaled, m_fps_);
+  const auto [screen_w, screen_h] = xdraw::viewport_size();
+  const auto cx = static_cast<float>(screen_w) * 0.5f;
+  const auto cy = static_cast<float>(screen_h) * 0.5f;
 
-  const auto text_size = draw_list.text_size(speed_text.c_str(), 1.0f);
-
-  const auto text_x = screen_x - text_size.width * 0.5f;
-  const auto text_y = screen_y - 40.0f;
-
-  draw_list.text(speed_text.c_str(), text_x, text_y, 1.0f,
+  draw_list.text(cx - tw * 0.5f, cy + 60.0f, speed_text,
                  xdraw::color{173, 192, 255, 255});
 }
 
 void Debug::RenderBoneGrid(xdraw::draw_list& draw_list,
                            const systems::Local::Snapshot& local) {
-  const auto skeleton = systems::g_bones.GetSkeleton(local);
+  const auto skeleton = systems::g_bones.GetSkeleton(local.ViewPawn());
 
-  for (size_t i = 0; i < skeleton.size(); ++i) {
-    const auto& bone_data = skeleton[i];
+  for (auto bone_id = 0u; bone_id < skeleton.size(); ++bone_id) {
+    const auto screen = systems::g_view.ProjectFull(skeleton[bone_id].position);
 
-    const auto screen_pos = systems::g_view.WorldToScreen(bone_data.position);
-    if (!screen_pos.has_value()) {
+    if (!screen.on_screen || screen.w <= 0.0f) {
       continue;
     }
 
-    const auto radius = settings::g_misc.m_debug.speed_scale * 2.0f;
-
-    auto yaw_norm = bone_data.rotation.y;
-    math::NormalizeAngle(yaw_norm);
-    const auto bone_color = yaw_norm < 0.5f ? xdraw::color{173, 192, 255, 85}
-                                            : xdraw::color{255, 0, 0, 85};
-
-    draw_list.circle_filled(screen_pos->x, screen_pos->y, radius, bone_color);
+    draw_list.line(screen.screen.x - 3.0f, screen.screen.y,
+                   screen.screen.x + 3.0f, screen.screen.y,
+                   xdraw::color{173, 192, 255, 255}, 1.0f);
+    draw_list.line(screen.screen.x, screen.screen.y - 3.0f, screen.screen.x,
+                   screen.screen.y + 3.0f, xdraw::color{173, 192, 255, 255},
+                   1.0f);
   }
 }
 
-}  // namespace features::misc::impl
+}  // namespace features::misc

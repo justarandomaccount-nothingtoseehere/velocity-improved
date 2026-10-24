@@ -14,7 +14,6 @@
 #include <unordered_map>
 #include <vector>
 
-#include "core/features/misc/impl/debug.h"
 #include "core/settings.h"
 #include "core/systems/systems.h"
 #include "external/xdraw/xdraw.hpp"
@@ -145,8 +144,6 @@ class ProjectileTrajectory {
   float m_delayed_strength_{1.0f};
   int m_delay_ticks_{};
 };
-
-class Debug;
 
 class Impacts {
  public:
@@ -289,6 +286,20 @@ class Debug {
  public:
   void OnRender(xdraw::draw_list& draw_list);
   void OnFrameStageNotify();
+
+ private:
+  void RenderBoneRevealer(xdraw::draw_list& draw_list,
+                          const systems::Local::Snapshot& local);
+  void RenderPoseParameters(xdraw::draw_list& draw_list,
+                            const systems::Local::Snapshot& local);
+  void RenderSpeedDisplay(xdraw::draw_list& draw_list,
+                          const systems::Local::Snapshot& local);
+  void RenderBoneGrid(xdraw::draw_list& draw_list,
+                      const systems::Local::Snapshot& local);
+
+  float m_fps_{60.0f};
+  std::uint32_t m_frames_{};
+  std::chrono::steady_clock::time_point m_last_fps_update_{};
 };
 
 class Removals {
@@ -512,9 +523,8 @@ class ScoreboardWeapons {
   // whenever it is opened and is resolved from JavaScript at update time.
   CUiEngine* m_ui_engine_{};
   CUiPanel* m_script_panel_{};
+};
 
 }  // namespace features::misc
-
-inline features::misc::Debug g_debug{};
 
 #endif  // VELOCITY_CORE_FEATURES_MISC_MISC_H_
