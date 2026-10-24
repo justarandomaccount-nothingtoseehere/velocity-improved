@@ -261,16 +261,18 @@ std::optional<float> Misc::Antiaim::MeasureEnemyRayYawOffset(
   const auto local_origin = memory::Read<math::Vector3>(
       local_game_scene_node + SCHEMA("CGameSceneNode", "m_vecAbsOrigin"_hash));
 
-  const auto measure_bone = systems::g_bones.Get(
-      local.pawn, static_cast<std::uint32_t>(
-                      settings::g_combat.m_antiaim.measure_bone.value));
-  if (measure_bone.position.LengthSqr() < 1.0f) {
+  const auto head_bone =
+      systems::g_bones.Get(local.pawn, cstypes::bone_ids::kHead);
+  const auto spine_bone =
+      systems::g_bones.Get(local.pawn, cstypes::bone_ids::kSpine1);
+  if (head_bone.position.LengthSqr() < 1.0f ||
+      spine_bone.position.LengthSqr() < 1.0f) {
     return std::nullopt;
   }
 
-  const math::Vector2 body{measure_bone.position.x - local_origin.x,
-                           measure_bone.position.y - local_origin.y};
-  if (body.LengthSqr() < 1.0e-6f) {
+  const math::Vector2 axis{head_bone.position.x - spine_bone.position.x,
+                           head_bone.position.y - spine_bone.position.y};
+  if (axis.LengthSqr() < 1.0e-6f) {
     return std::nullopt;
   }
 
@@ -351,12 +353,13 @@ std::optional<float> Misc::Antiaim::MeasureEnemyRayYawOffset(
   }
 
   static constexpr auto kRadToDeg{180.0f / std::numbers::pi_v<float>};
+  static constexpr auto kAxisBias{179.0f};
 
   const auto target_yaw =
       std::atan2f(toward_enemy.y, toward_enemy.x) * kRadToDeg;
-  const auto body_yaw = std::atan2f(body.y, body.x) * kRadToDeg;
+  const auto axis_yaw = std::atan2f(axis.y, axis.x) * kRadToDeg + kAxisBias;
 
-  return math::helpers::NormalizeYaw(target_yaw - body_yaw);
+  return math::helpers::NormalizeYaw(target_yaw - axis_yaw);
 }
 
 float Misc::Antiaim::GetYaw(const math::Vector3& view_angles,
@@ -573,16 +576,12 @@ float Misc::Antiaim::GetYaw(const math::Vector3& view_angles,
   this->m_head_offset_ = 0.0f;
 
   if (const auto ray_offset = this->MeasureEnemyRayYawOffset(local)) {
-    const auto slash =
-        std::max(settings::g_combat.m_antiaim.head_offset_slash.value, 1);
-    const auto correction = *ray_offset / static_cast<float>(slash);
-
-    this->m_head_offset_ = correction;
+    this->m_head_offset_ = *ray_offset;
 
     if (settings::g_combat.m_antiaim.auto_yaw_adjust.value &&
         settings::g_combat.m_antiaim.pitch !=
             settings::Combat::Antiaim::PitchMode::kNone) {
-      yaw += correction;
+      yaw += *ray_offset;
     }
   }
 

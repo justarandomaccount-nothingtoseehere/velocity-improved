@@ -204,8 +204,6 @@ struct Combat {
         {},
         "correct yaw to compensate for the models inherit sideways roll",
         "anti aim"};
-    config::val<int> head_offset_slash{1, "anti aim", "head offset slash"};
-    config::val<int> measure_bone{6, "anti aim", "measure bone"};
     xui::setting manual_left{
         false, {'Z', xui::bind_mode::toggle}, "force left", "anti aim"};
     xui::setting manual_right{
