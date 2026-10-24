@@ -202,6 +202,7 @@ struct Combat {
         {},
         "correct yaw to compensate for the models inherit sideways roll",
         "anti aim"};
+    xui::setting pelvis_axis{false, {}, "measure axis from pelvis", "anti aim"};
     xui::setting jitter{false, {}, "jitter", "anti aim"};
     config::val<int> jitter_amount{15, "anti aim", "jitter amount"};
     config::val<int> jitter_speed{2, "anti aim", "jitter speed"};

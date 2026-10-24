@@ -95,6 +95,7 @@ void Menu::DrawRagebot(float group_w) const {
     xui::slider_int("pitch##aa", aa.pitch, -89, 89, "%d°");
 
     xui::checkbox("compensate roll", aa.auto_yaw_adjust);
+    xui::checkbox("measure axis from pelvis", aa.pelvis_axis);
     xui::checkbox("force left", aa.manual_left);
     xui::checkbox("force right", aa.manual_right);
     xui::checkbox("hide onshot", aa.hide_shots);
