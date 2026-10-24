@@ -322,7 +322,7 @@ class Misc {
     [[nodiscard]] float GetYaw(const math::Vector3& view_angles,
                                const systems::Local::Snapshot& local);
     [[nodiscard]] std::optional<float> MeasureEnemyRayYawOffset(
-        const systems::Local::Snapshot& local) const;
+        const systems::Local::Snapshot& local);
     void CorrectMovement(systems::Input::Usercmd* cmd);
     void CorrectMovementReprojection(systems::Input::Usercmd* cmd);
     void CorrectMovementYawDelta(systems::Input::Usercmd* cmd);
@@ -337,6 +337,8 @@ class Misc {
     float m_indicator_yaw_{};
     float m_head_offset_{};
     float m_roll_adjust_{};
+    std::uintptr_t m_measure_enemy_{};
+    std::uintptr_t m_yawed_enemy_{};
   };
 
  public:

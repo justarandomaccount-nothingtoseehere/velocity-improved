@@ -247,7 +247,7 @@ float Misc::Antiaim::GetPitch(float view_pitch) {
 }
 
 std::optional<float> Misc::Antiaim::MeasureEnemyRayYawOffset(
-    const systems::Local::Snapshot& local) const {
+    const systems::Local::Snapshot& local) {
   if (!local.pawn) {
     return std::nullopt;
   }
@@ -336,6 +336,8 @@ std::optional<float> Misc::Antiaim::MeasureEnemyRayYawOffset(
   if (!enemy_found) {
     return std::nullopt;
   }
+
+  this->m_measure_enemy_ = best_pawn;
 
   const auto enemy_scene = memory::Read<std::uintptr_t>(
       best_pawn + SCHEMA("C_BaseEntity", "m_pGameSceneNode"_hash));
@@ -576,6 +578,11 @@ float Misc::Antiaim::GetYaw(const math::Vector3& view_angles,
   this->m_head_offset_ = 0.0f;
 
   static constexpr auto kRollEpsilon{0.05f};
+  static constexpr auto kRollGapFine{8.0f};
+  static constexpr auto kRollGapCoarse{40.0f};
+  static constexpr auto kRollGainCoarse{2.0f};
+  static constexpr auto kRollGainFine{1.0f};
+  static constexpr auto kRollGainMicro{0.25f};
 
   const auto compensating =
       settings::g_combat.m_antiaim.auto_yaw_adjust.value &&
@@ -589,8 +596,20 @@ float Misc::Antiaim::GetYaw(const math::Vector3& view_angles,
   if (const auto ray_offset = this->MeasureEnemyRayYawOffset(local)) {
     this->m_head_offset_ = *ray_offset;
 
-    if (compensating && std::fabsf(*ray_offset) >= kRollEpsilon) {
-      this->m_roll_adjust_ += *ray_offset;
+    if (compensating) {
+      if (this->m_measure_enemy_ != this->m_yawed_enemy_) {
+        this->m_roll_adjust_ = 0.0f;
+        this->m_yawed_enemy_ = this->m_measure_enemy_;
+      }
+
+      const auto gap = std::fabsf(*ray_offset);
+
+      if (gap >= kRollEpsilon) {
+        const auto gain = gap >= kRollGapCoarse ? kRollGainCoarse
+                          : gap >= kRollGapFine ? kRollGainFine
+                                                : kRollGainMicro;
+        this->m_roll_adjust_ += *ray_offset * gain;
+      }
     }
 
     yaw += this->m_roll_adjust_;
