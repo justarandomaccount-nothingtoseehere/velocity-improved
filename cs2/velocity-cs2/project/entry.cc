@@ -12,6 +12,7 @@
 #include "utilities/diag.h"
 #include "utilities/logging/logging.h"
 #include "utilities/memory/memory.h"
+#include "utilities/profiling/profiling.h"
 #include "utilities/security/security.h"
 #include "utilities/steam/steam.h"
 #include "utilities/threadpool/threadpool.h"
@@ -250,6 +251,10 @@ DWORD WINAPI InitThreadImpl(LPVOID param) {
     diag::Write(diag::Level::kInfo, "crash handlers installed");
   }
 
+  diag::Step("stage: profiling");
+  profiling::Startup();
+  profiling::ThreadName("velocity-init");
+
   diag::Step("stage: coinit");
   const auto coinit_result = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
   if (FAILED(coinit_result)) {
@@ -451,6 +456,7 @@ extern "C" int __stdcall Entry(HMODULE module_handle, DWORD reason,
     hooks::Utility::Shutdown();
     hooks::Cheat::Shutdown();
     features::changer::runtime::Shutdown();
+    profiling::Shutdown();
     CoUninitialize();
 #endif
 

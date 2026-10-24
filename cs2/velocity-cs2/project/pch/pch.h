@@ -75,6 +75,7 @@
 #include "utilities/animation.h"
 #include "utilities/cstypes.h"
 #include "utilities/fnv1a.h"
+#include "utilities/profiling/profiling.h"
 
 // declarations
 extern "C" int __stdcall _CRT_INIT(HMODULE, DWORD, LPVOID);

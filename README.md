@@ -41,6 +41,18 @@ cs2\bin\velocity-cs2-dev.dll
 If you use a standalone vcpkg installation instead of Visual Studio's bundled
 copy, set `VCPKG_ROOT` to that installation directory before building.
 
+## Profiling
+
+Development builds embed the [Tracy](https://github.com/wolfpld/tracy) client
+(v0.14.1) from `project/external/tracy`. The client is started after the crash
+handlers are installed and stopped during DLL detach. Ship builds do not
+compile or link any Tracy code.
+
+Use the matching Tracy Profiler 0.14.1 executable, connect to the `cs2.exe`
+process, and profile on demand. Frame boundaries are emitted from the `Present`
+hook, and the top-level `Present`, `CreateMove` and `FrameStageNotify` hooks
+are instrumented with scopes.
+
 ## Contributing
 
 Contributions are welcome. If you want to help, open a pull request with a clear

@@ -13,6 +13,7 @@
 #include "utilities/hooking/hooking.h"
 #include "utilities/logging/logging.h"
 #include "utilities/memory/memory.h"
+#include "utilities/profiling/profiling.h"
 #include "utilities/security/security.h"
 
 namespace hooks {
@@ -233,6 +234,8 @@ void Cheat::Shutdown() {
 
 HRESULT __fastcall Cheat::Present(IDXGISwapChain* thisptr, UINT sync_interval,
                                   UINT flags) {
+  profiling::Frame();
+  ZoneScoped;
   rendering::g_context.OnPresent(thisptr);
 
   const auto& force_server = settings::g_misc.m_force_server;
@@ -405,6 +408,7 @@ void __fastcall Cheat::CmdInterpreter(std::uintptr_t render_thread,
 }
 
 void __fastcall Cheat::FrameStageNotify(std::uintptr_t thisptr, int stage) {
+  ZoneScoped;
   if (systems::g_entities.IsEmpty()) {
     systems::g_entities.ForceUpdate();
   }
@@ -466,6 +470,7 @@ void __fastcall Cheat::FrameStageNotify(std::uintptr_t thisptr, int stage) {
 
 void __fastcall Cheat::CreateMove(std::uintptr_t thisptr, int slot,
                                   bool active) {
+  ZoneScoped;
   const auto local = systems::g_local.Get();
 
   if (!local.pawn || !local.controller) {
