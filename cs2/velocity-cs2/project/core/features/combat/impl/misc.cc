@@ -92,7 +92,8 @@ void Misc::Antiaim::OnCreateMove(systems::Input::Usercmd* cmd) {
                           cstypes::entity_flags::kOnGround) != 0;
 
   if (subtick_view_angles && on_ground &&
-      CONVAR("sv_quantize_movement_input")->Get<bool>()) {
+      CONVAR("sv_quantize_movement_input")->Get<bool>() &&
+      !settings::g_combat.m_antiaim.jitter.value) {
     this->CorrectMovementReprojection(cmd);
   } else if (subtick_view_angles) {
     this->CorrectMovementYawDelta(cmd);
@@ -594,8 +595,7 @@ float Misc::Antiaim::GetYaw(const math::Vector3& view_angles,
   static constexpr auto kRollEpsilon{0.05f};
   static constexpr auto kRollMaxStep{12.0f};
 
-  const auto compensating =
-      aa.auto_yaw_adjust.value && !aa.jitter.value && !aa.spin.value;
+  const auto compensating = aa.auto_yaw_adjust.value && !aa.spin.value;
 
   if (!compensating) {
     this->m_roll_adjust_ = 0.0f;
@@ -622,7 +622,10 @@ float Misc::Antiaim::GetYaw(const math::Vector3& view_angles,
         ++this->m_roll_streak_;
       }
 
-      if (gap >= kRollEpsilon && this->m_roll_streak_ >= 2) {
+      const auto jittering = aa.jitter.value;
+      const auto min_streak = jittering ? 1 : 2;
+
+      if (gap >= kRollEpsilon && this->m_roll_streak_ >= min_streak) {
         this->m_roll_adjust_ +=
             std::clamp(*ray_offset, -kRollMaxStep, kRollMaxStep);
       }
