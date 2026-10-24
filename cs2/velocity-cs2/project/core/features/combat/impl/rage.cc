@@ -593,7 +593,10 @@ void Rage::RunGun(systems::Input::Usercmd* cmd, const AimContext& ctx,
 
   if (config.no_spread.value) {
     shared_ctx.inaccuracy = g_shared.GetInaccuracy(false);
-    auto all_hits = scan_from_eye_candidates({}, shared_ctx.inaccuracy, 0.0f);
+    auto all_hits = [&] {
+      ZoneScopedN("rage: scan no-spread");
+      return scan_from_eye_candidates({}, shared_ctx.inaccuracy, 0.0f);
+    }();
 
     if (all_hits.empty()) {
       duckpeek.OnTargetLost();
@@ -655,8 +658,10 @@ void Rage::RunGun(systems::Input::Usercmd* cmd, const AimContext& ctx,
                       : ctx.predicted_inaccuracy;
 
   // Current-shot selection is always based on current engine shoot-history.
-  auto current_hits =
-      scan_from_eye_candidates({}, shot_inaccuracy, effective_hc);
+  auto current_hits = [&] {
+    ZoneScopedN("rage: scan primary");
+    return scan_from_eye_candidates({}, shot_inaccuracy, effective_hc);
+  }();
   const auto best =
       this->SelectBest(ctx, current_hits, shot_inaccuracy, effective_hc);
 
@@ -710,6 +715,7 @@ void Rage::RunGun(systems::Input::Usercmd* cmd, const AimContext& ctx,
   // predicted stopped eye; airborne stopping keeps the current target
   // context.
   if (!shot_viable && this->ShouldStopMovement(ctx)) {
+    ZoneScopedN("rage: stop prediction");
     const auto stop = this->PredictStop(ctx, primary_eye, local);
     if (stop) {
       const auto future_offset = stop->eye - primary_eye;

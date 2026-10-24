@@ -483,9 +483,13 @@ void __fastcall Cheat::CreateMove(std::uintptr_t thisptr, int slot,
     return;
   }
 
-  m_create_move_.Call<void>(thisptr, slot, active);
+  {
+    ZoneScopedN("create_move: engine");
+    m_create_move_.Call<void>(thisptr, slot, active);
+  }
 
   {
+    ZoneScopedN("create_move: invalidators");
     features::combat::g_shared.InvalidateIfNeeded();
     features::combat::g_legit.InvalidateIfNeeded();
     features::combat::g_misc.Quickpeek().ResetIfNeeded();
@@ -508,97 +512,157 @@ void __fastcall Cheat::CreateMove(std::uintptr_t thisptr, int slot,
     return;
   }
 
-  systems::g_input.Update();
   {
-    const auto current_cmd = systems::g_input.Get();
-    if (!current_cmd || !current_cmd->csgo_user_cmd.HasBase()) {
-      return;
-    }
-
-    static std::atomic_bool first_create_move_traced{};
-    const auto trace =
-        !first_create_move_traced.exchange(true, std::memory_order_relaxed);
-    diag::ExceptionScope exception_scope{"create_move: desubtick"};
-    if (trace) {
-      diag::Step("create_move: feature pipeline begin");
-    }
-
-    systems::g_input.Desubtick(current_cmd);
-    systems::g_prediction.CapturePrestate(local.pawn, movement_services);
-
+    ZoneScopedN("create_move: input update");
+    systems::g_input.Update();
     {
-      diag::SetExceptionPhase("create_move: shared update");
-      features::movement::g_airstrafe.StoreAngles();
-      features::combat::g_shared.Update();
+      const auto current_cmd = systems::g_input.Get();
+      if (!current_cmd || !current_cmd->csgo_user_cmd.HasBase()) {
+        return;
+      }
 
-      diag::SetExceptionPhase("create_move: combat misc");
-      features::combat::g_misc.Antiaim().OnCreateMove(current_cmd);
-      features::combat::g_misc.Autostop().OnCreateMove(current_cmd);
-    }
-    if (trace) {
-      diag::Step("create_move: shared and combat misc ready");
-    }
-
-    {
-      diag::SetExceptionPhase("create_move: pre-combat movement");
-      features::movement::g_slowwalk.OnCreateMove(current_cmd);
-      features::movement::g_edgebug.OnCreateMove(current_cmd);
-      features::movement::g_edgejump.OnCreateMove(current_cmd);
-      features::movement::g_edgestop.OnCreateMove(current_cmd);
-      features::movement::g_jumpbug.OnCreateMove(current_cmd);
-      features::movement::g_bhop.OnCreateMove(current_cmd);
-      features::movement::g_fastladder.OnCreateMove(current_cmd);
+      static std::atomic_bool first_create_move_traced{};
+      const auto trace =
+          !first_create_move_traced.exchange(true, std::memory_order_relaxed);
+      diag::ExceptionScope exception_scope{"create_move: desubtick"};
       if (trace) {
-        diag::Step("create_move: pre-combat movement end");
-        diag::Step("create_move: rage begin");
+        diag::Step("create_move: feature pipeline begin");
       }
 
       {
-        diag::SetExceptionPhase("create_move: rage");
-        features::combat::g_rage.OnCreateMove(current_cmd);
-        if (trace) {
-          diag::Step("create_move: rage end");
-          diag::Step("create_move: legit begin");
-        }
-        diag::SetExceptionPhase("create_move: legit");
-        features::combat::g_legit.OnCreateMove(current_cmd);
-        if (trace) {
-          diag::Step("create_move: legit end");
-        }
+        ZoneScopedN("create_move: desubtick");
+        systems::g_input.Desubtick(current_cmd);
+      }
+      {
+        ZoneScopedN("create_move: prestate");
+        systems::g_prediction.CapturePrestate(local.pawn, movement_services);
       }
 
-      diag::SetExceptionPhase("create_move: post-combat movement");
-      features::combat::g_misc.Duckpeek().OnCreateMove(current_cmd);
-      features::movement::g_slidewalk.OnCreateMove(current_cmd);
-      features::movement::g_test_strafer.OnCreateMove(current_cmd);
-      features::movement::g_airstrafe.OnCreateMove(current_cmd);
-      features::misc::g_projectile_trajectory.OnCreateMove(current_cmd);
-    }
-    if (trace) {
-      diag::Step("create_move: post-combat movement end");
-    }
+      {
+        ZoneScopedN("create_move: shared update");
+        diag::SetExceptionPhase("create_move: shared update");
+        features::movement::g_airstrafe.StoreAngles();
+        features::combat::g_shared.Update();
+      }
 
-    diag::SetExceptionPhase("create_move: quickpeek");
-    features::combat::g_misc.Quickpeek().OnCreateMove(current_cmd);
-    features::movement::g_static_legs.OnCreateMove(current_cmd);
-    if (trace) {
-      diag::Step("create_move: quickpeek end");
-      diag::Step("create_move: final subtick begin");
-    }
+      diag::SetExceptionPhase("create_move: combat misc");
+      {
+        ZoneScopedN("create_move: antiaim");
+        features::combat::g_misc.Antiaim().OnCreateMove(current_cmd);
+      }
+      {
+        ZoneScopedN("create_move: autostop");
+        features::combat::g_misc.Autostop().OnCreateMove(current_cmd);
+      }
+      if (trace) {
+        diag::Step("create_move: shared and combat misc ready");
+      }
 
-    diag::SetExceptionPhase("create_move: final subtick");
-    const auto final_base = current_cmd->csgo_user_cmd.MutableBase();
-    if (final_base && systems::Input::HasMoveSubticks(final_base) &&
-        !features::movement::g_test_strafer.HandledThisTick() &&
-        !features::movement::g_static_legs.ActiveThisTick()) {
-      final_base->SetForwardmove(0.0f);
-      final_base->SetLeftmove(0.0f);
-    }
-    if (trace) {
-      diag::Step("create_move: final subtick end");
-    }
+      {
+        diag::SetExceptionPhase("create_move: pre-combat movement");
+        {
+          ZoneScopedN("create_move: slowwalk");
+          features::movement::g_slowwalk.OnCreateMove(current_cmd);
+        }
+        {
+          ZoneScopedN("create_move: edgebug");
+          features::movement::g_edgebug.OnCreateMove(current_cmd);
+        }
+        {
+          ZoneScopedN("create_move: edgejump");
+          features::movement::g_edgejump.OnCreateMove(current_cmd);
+        }
+        {
+          ZoneScopedN("create_move: edgestop");
+          features::movement::g_edgestop.OnCreateMove(current_cmd);
+        }
+        {
+          ZoneScopedN("create_move: jumpbug");
+          features::movement::g_jumpbug.OnCreateMove(current_cmd);
+        }
+        {
+          ZoneScopedN("create_move: bhop");
+          features::movement::g_bhop.OnCreateMove(current_cmd);
+        }
+        {
+          ZoneScopedN("create_move: fastladder");
+          features::movement::g_fastladder.OnCreateMove(current_cmd);
+        }
+        if (trace) {
+          diag::Step("create_move: pre-combat movement end");
+          diag::Step("create_move: rage begin");
+        }
 
-    // systems::g_legit_input.on_create_move( current_cmd );
+        {
+          diag::SetExceptionPhase("create_move: rage");
+          ZoneScopedN("create_move: rage");
+          features::combat::g_rage.OnCreateMove(current_cmd);
+          if (trace) {
+            diag::Step("create_move: rage end");
+            diag::Step("create_move: legit begin");
+          }
+          diag::SetExceptionPhase("create_move: legit");
+          ZoneScopedN("create_move: legit");
+          features::combat::g_legit.OnCreateMove(current_cmd);
+          if (trace) {
+            diag::Step("create_move: legit end");
+          }
+        }
+
+        diag::SetExceptionPhase("create_move: post-combat movement");
+        {
+          ZoneScopedN("create_move: duckpeek");
+          features::combat::g_misc.Duckpeek().OnCreateMove(current_cmd);
+        }
+        {
+          ZoneScopedN("create_move: slidewalk");
+          features::movement::g_slidewalk.OnCreateMove(current_cmd);
+        }
+        {
+          ZoneScopedN("create_move: test_strafer");
+          features::movement::g_test_strafer.OnCreateMove(current_cmd);
+        }
+        {
+          ZoneScopedN("create_move: airstrafe");
+          features::movement::g_airstrafe.OnCreateMove(current_cmd);
+        }
+        {
+          ZoneScopedN("create_move: trajectory");
+          features::misc::g_projectile_trajectory.OnCreateMove(current_cmd);
+        }
+      }
+      if (trace) {
+        diag::Step("create_move: post-combat movement end");
+      }
+
+      diag::SetExceptionPhase("create_move: quickpeek");
+      {
+        ZoneScopedN("create_move: quickpeek");
+        features::combat::g_misc.Quickpeek().OnCreateMove(current_cmd);
+      }
+      {
+        ZoneScopedN("create_move: static_legs");
+        features::movement::g_static_legs.OnCreateMove(current_cmd);
+      }
+      if (trace) {
+        diag::Step("create_move: quickpeek end");
+        diag::Step("create_move: final subtick begin");
+      }
+
+      diag::SetExceptionPhase("create_move: final subtick");
+      const auto final_base = current_cmd->csgo_user_cmd.MutableBase();
+      if (final_base && systems::Input::HasMoveSubticks(final_base) &&
+          !features::movement::g_test_strafer.HandledThisTick() &&
+          !features::movement::g_static_legs.ActiveThisTick()) {
+        final_base->SetForwardmove(0.0f);
+        final_base->SetLeftmove(0.0f);
+      }
+      if (trace) {
+        diag::Step("create_move: final subtick end");
+      }
+
+      // systems::g_legit_input.on_create_move( current_cmd );
+    }
   }
   static std::atomic_bool first_input_apply_traced{};
   const auto trace_apply =
@@ -607,7 +671,10 @@ void __fastcall Cheat::CreateMove(std::uintptr_t thisptr, int slot,
     diag::Step("create_move: input apply begin");
   }
   diag::ExceptionScope exception_scope{"create_move: input apply"};
-  systems::g_input.Apply();
+  {
+    ZoneScopedN("create_move: apply");
+    systems::g_input.Apply();
+  }
   if (trace_apply) {
     diag::Step("create_move: input apply end");
   }
