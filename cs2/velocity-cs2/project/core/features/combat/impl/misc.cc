@@ -596,6 +596,8 @@ float Misc::Antiaim::GetYaw(const math::Vector3& view_angles,
 
   static constexpr auto kRollEpsilon{0.05f};
   static constexpr auto kRollMaxStep{12.0f};
+  static constexpr auto kYawJumpGap{90.0f};
+  static constexpr auto kRollFreezeTicks{12};
 
   const auto compensating = aa.auto_yaw_adjust.value && !aa.spin.value;
 
@@ -603,33 +605,47 @@ float Misc::Antiaim::GetYaw(const math::Vector3& view_angles,
     this->m_roll_adjust_ = 0.0f;
     this->m_roll_sign_ = 0;
     this->m_roll_streak_ = 0;
+    this->m_roll_freeze_ = 0;
   }
+
+  const auto commanded_yaw = yaw;
+  const auto yaw_jumped =
+      std::fabsf(math::helpers::NormalizeYaw(
+          commanded_yaw - this->m_prev_commanded_yaw_)) > kYawJumpGap;
+  this->m_prev_commanded_yaw_ = commanded_yaw;
+  const auto side_flipped = this->m_yaw_side_ != this->m_prev_yaw_side_;
+  this->m_prev_yaw_side_ = this->m_yaw_side_;
 
   if (const auto ray_offset = this->MeasureEnemyRayYawOffset(local)) {
     this->m_head_offset_ = *ray_offset;
 
     if (compensating) {
-      if (this->m_measure_enemy_ != this->m_yawed_enemy_) {
-        this->m_roll_adjust_ += *ray_offset;
+      if (this->m_measure_enemy_ != this->m_yawed_enemy_ || yaw_jumped ||
+          side_flipped) {
         this->m_roll_sign_ = 0;
         this->m_roll_streak_ = 0;
+        this->m_roll_freeze_ = kRollFreezeTicks;
         this->m_yawed_enemy_ = this->m_measure_enemy_;
       }
 
-      const auto gap = std::fabsf(*ray_offset);
-      const auto sign = *ray_offset >= 0.0f ? 1 : -1;
-
-      if (sign != this->m_roll_sign_) {
-        this->m_roll_sign_ = sign;
-        this->m_roll_streak_ = 1;
+      if (this->m_roll_freeze_ > 0) {
+        --this->m_roll_freeze_;
       } else {
-        ++this->m_roll_streak_;
-      }
+        const auto gap = std::fabsf(*ray_offset);
+        const auto sign = *ray_offset >= 0.0f ? 1 : -1;
 
-      const auto min_streak = aa.jitter.value ? 1 : 2;
-      if (gap >= kRollEpsilon && this->m_roll_streak_ >= min_streak) {
-        this->m_roll_adjust_ +=
-            std::clamp(*ray_offset, -kRollMaxStep, kRollMaxStep);
+        if (sign != this->m_roll_sign_) {
+          this->m_roll_sign_ = sign;
+          this->m_roll_streak_ = 1;
+        } else {
+          ++this->m_roll_streak_;
+        }
+
+        const auto min_streak = aa.jitter.value ? 1 : 2;
+        if (gap >= kRollEpsilon && this->m_roll_streak_ >= min_streak) {
+          this->m_roll_adjust_ +=
+              std::clamp(*ray_offset, -kRollMaxStep, kRollMaxStep);
+        }
       }
     }
 
