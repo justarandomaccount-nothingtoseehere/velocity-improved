@@ -101,10 +101,12 @@ void Debug::RenderPoseParameters(xdraw::draw_list& draw_list,
       cfg.bone_id_source, 0, static_cast<int>(std::size(kBones)) - 1);
   const auto& bone = skeleton[kBones[source_id]];
 
-  const auto yaw = std::fmod(math::RadToDeg(bone.rotation.y) + 360.0f, 360.0f);
+  const auto yaw =
+      std::fmod(math::helpers::RadToDeg(bone.rotation.y) + 360.0f, 360.0f);
   const auto pitch =
-      std::fmod(math::RadToDeg(bone.rotation.x) + 360.0f, 360.0f);
-  const auto roll = std::fmod(math::RadToDeg(bone.rotation.z) + 360.0f, 360.0f);
+      std::fmod(math::helpers::RadToDeg(bone.rotation.x) + 360.0f, 360.0f);
+  const auto roll =
+      std::fmod(math::helpers::RadToDeg(bone.rotation.z) + 360.0f, 360.0f);
 
   const auto pose_text =
       std::format("{:.1f} / {:.1f} / {:.1f}", pitch, yaw, roll);
