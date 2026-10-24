@@ -238,8 +238,6 @@ class Shared {
 
   [[nodiscard]] int& LastShootTick() { return this->m_last_shoot_tick_; }
 
-  [[nodiscard]] std::uint32_t GetSpreadSeed(const math::Vector3& angles,
-                                            int tick) const;
   [[nodiscard]] math::Vector2 CalculateSpread(int seed, float accuracy,
                                               float spread, float recoil_index,
                                               int item_def_idx,
@@ -249,8 +247,7 @@ class Shared {
                                          const math::Vector3& aim_angle,
                                          const systems::Hitboxes::Entry& hitbox,
                                          const systems::Bones::Data& bone,
-                                         float inaccuracy, float spread,
-                                         int samples = 256) const;
+                                         float inaccuracy, float spread) const;
   [[nodiscard]] math::Vector3 FindSpreadCorrection(
       const math::Vector3& aim_angle, int tick) const;
   [[nodiscard]] math::Vector3 GetEyePosition(std::uintptr_t local_pawn) const;
@@ -296,6 +293,18 @@ class Shared {
   }
 
  private:
+  struct SpreadSample {
+    float inaccuracy_density{};
+    float cos_inaccuracy{};
+    float sin_inaccuracy{};
+    float spread_density{};
+    float cos_spread{};
+    float sin_spread{};
+  };
+  [[nodiscard]] static const std::array<SpreadSample, 64>& HitchanceScatter();
+  static void ApplyWeaponSpreadDensity(int item_def_idx, float recoil_index,
+                                       float* density);
+
   Context m_ctx_{};
   Penetration m_pen_{};
   Lagcomp m_lc_{};

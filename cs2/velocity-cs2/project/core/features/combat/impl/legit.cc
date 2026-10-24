@@ -396,7 +396,7 @@ void Legit::ApplyTriggerbot(
   if (seed_mode) {
     const auto tick_base = memory::Read<std::int32_t>(
         local.controller + SCHEMA("CBasePlayerController", "m_nTickBase"_hash));
-    seed = g_shared.GetSpreadSeed(corrected_angles, tick_base);
+    seed = random::SpreadSeed(corrected_angles, tick_base);
     spread = g_shared.CalculateSpread(seed, ctx.inaccuracy, ctx.spread,
                                       ctx.recoil_index, ctx.item_def_idx,
                                       ctx.num_bullets);

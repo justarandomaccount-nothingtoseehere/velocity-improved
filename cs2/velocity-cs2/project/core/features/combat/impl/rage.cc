@@ -2014,33 +2014,22 @@ std::vector<math::Vector3> Rage::GenerateMultipoints(
     const math::Vector3& shoot_pos, float inaccuracy) const {
   std::vector<math::Vector3> out;
 
-  auto scale = std::clamp(pointscale / 100.0f, 0.0f, 1.0f);
+  const auto scale = std::clamp(pointscale / 100.0f, 0.0f, 1.0f);
   if (scale <= 0.01f) {
     return out;
   }
 
+  const auto& config =
+      settings::g_combat.m_ragebot.GetGroup(g_shared.Ctx().weapon_type);
+  const auto dynamic = config.dynamic_pointscale.value;
+
+  const auto radius = hitbox.radius;
   const auto hb_mid = (hitbox.mins + hitbox.maxs) * 0.5f;
   const auto capsule_a = center + bone_rot.RotateVector(hitbox.mins - hb_mid);
   const auto capsule_b = center + bone_rot.RotateVector(hitbox.maxs - hb_mid);
+  const auto capsule_ab = capsule_b - capsule_a;
+  const auto capsule_len_sq = capsule_ab.LengthSqr();
 
-  // Keep points inside the part of the hitbox reachable by the full spread
-  // cone.
-  const auto& config =
-      settings::g_combat.m_ragebot.GetGroup(g_shared.Ctx().weapon_type);
-  if (config.dynamic_pointscale.value && hitbox.radius > 0.001f) {
-    const auto cone = std::max(inaccuracy + g_shared.Ctx().spread, 0.0f);
-    const auto cone_radius = std::tanf(cone) * (center - shoot_pos).Length();
-    const auto automatic_scale =
-        std::clamp(0.9f - cone_radius / hitbox.radius, 0.0f, 1.0f);
-    scale = std::min(scale, automatic_scale);
-
-    if (scale <= 0.01f) {
-      return out;
-    }
-  }
-
-  // Build a view-relative frame so points rotate correctly above and below
-  // us.
   const auto shoot_dir = (center - shoot_pos).Normalized();
   const auto ang = math::helpers::VectorToAngle(shoot_dir);
 
@@ -2050,84 +2039,103 @@ std::vector<math::Vector3> Rage::GenerateMultipoints(
   // angle_vectors_left returns left, so negate it for right.
   const auto right = math::Vector3{-left.x, -left.y, -left.z};
 
-  // Trace from outside through the center to find the real capsule surface.
-  // This is accurate around rounded end caps, where radius offsets are not.
+  // Intersect box hitboxes in bone space using their directional support.
   const auto surface_point =
       [&](const math::Vector3& direction) -> math::Vector3 {
-    const auto dir = direction.Normalized();
+    auto inverse = bone_rot;
+    inverse.x = -inverse.x;
+    inverse.y = -inverse.y;
+    inverse.z = -inverse.z;
+    const auto local_dir = inverse.RotateVector(direction);
+    const auto extents = (hitbox.maxs - hitbox.mins) * 0.5f;
+    auto distance = 8192.0f;
 
-    if (hitbox.radius > 0.001f) {
-      const auto reach =
-          (capsule_b - capsule_a).Length() + hitbox.radius * 2.0f + 1.0f;
-      const auto origin = center + dir * reach;
-      const auto delta = dir * (reach * -2.0f);
-      auto fraction{1.0f};
+    if (std::fabs(local_dir.x) > 1.0e-6f)
+      distance = std::min(distance, std::fabs(extents.x / local_dir.x));
+    if (std::fabs(local_dir.y) > 1.0e-6f)
+      distance = std::min(distance, std::fabs(extents.y / local_dir.y));
+    if (std::fabs(local_dir.z) > 1.0e-6f)
+      distance = std::min(distance, std::fabs(extents.z / local_dir.z));
 
-      if (g_shared.RayVsCapsule(origin, delta, capsule_a, capsule_b,
-                                hitbox.radius, fraction)) {
-        return origin + delta * fraction;
-      }
-    } else {
-      // Intersect box hitboxes in bone space using their directional
-      // support.
-      auto inverse = bone_rot;
-      inverse.x = -inverse.x;
-      inverse.y = -inverse.y;
-      inverse.z = -inverse.z;
-      const auto local_dir = inverse.RotateVector(dir);
-      const auto extents = (hitbox.maxs - hitbox.mins) * 0.5f;
-      auto distance = 8192.0f;
-
-      if (std::fabs(local_dir.x) > 1.0e-6f)
-        distance = std::min(distance, std::fabs(extents.x / local_dir.x));
-      if (std::fabs(local_dir.y) > 1.0e-6f)
-        distance = std::min(distance, std::fabs(extents.y / local_dir.y));
-      if (std::fabs(local_dir.z) > 1.0e-6f)
-        distance = std::min(distance, std::fabs(extents.z / local_dir.z));
-
-      if (distance < 8192.0f) {
-        return center + dir * distance;
-      }
+    if (distance < 8192.0f) {
+      return center + direction * distance;
     }
 
     return center;
   };
 
-  const auto scaled_surface = [&](const math::Vector3& direction) {
-    const auto surface = surface_point(direction);
-    return center + (surface - center) * scale;
+  const auto safe_point = [&](const math::Vector3& point,
+                              float inward) -> math::Vector3 {
+    if (radius <= 0.001f) {
+      return surface_point(point - center);
+    }
+
+    const auto t =
+        capsule_len_sq > 1.0e-4f
+            ? std::clamp((point - capsule_a).Dot(capsule_ab) / capsule_len_sq,
+                         0.0f, 1.0f)
+            : 0.0f;
+    const auto closest = capsule_a + capsule_ab * t;
+    const auto delta = point - closest;
+    const auto length = delta.Length();
+    const auto limit = radius * inward;
+    if (length > limit && length > 1.0e-6f) {
+      return closest + delta * (limit / length);
+    }
+    return point;
+  };
+
+  const auto add_point = [&](const math::Vector3& point, float inward) {
+    out.push_back(safe_point(point, inward));
   };
 
   switch (hitbox.index) {
-    case 0:  // head
-    {
-      out.reserve(4);
-      out.push_back(scaled_surface(right));
-      out.push_back(scaled_surface(-right));
-      out.push_back(scaled_surface(up));
-      out.push_back(scaled_surface(-up));
+    case 0: {
+      const auto inward = 0.85f;
+      const auto anchor = capsule_a.z > capsule_b.z ? capsule_a : capsule_b;
+      const auto fwd = (shoot_pos - center).Normalized();
+
+      out.reserve(11);
+      add_point(anchor, inward);
+      add_point(anchor + up * radius, inward);
+      add_point(anchor - fwd * radius, inward);
+      add_point(anchor + (up - fwd).Normalized() * radius, inward);
+      add_point(anchor + right * radius, inward);
+      add_point(anchor - right * radius, inward);
+      for (const auto sign : {1.0f, -1.0f}) {
+        for (const auto step : {1.0f, 0.67f, 0.34f}) {
+          const auto ring = (up + right * (sign * step)).Normalized();
+          add_point(anchor + ring * radius, inward);
+        }
+      }
       break;
     }
 
     case 2:
-    case 3:  // stomach / pelvis
-    {
-      out.reserve(2);
-      out.push_back(scaled_surface(right));
-      out.push_back(scaled_surface(-right));
+    case 3: {
+      const auto inward = 0.9f;
+
+      out.reserve(5);
+      add_point(center + right * radius, inward);
+      add_point(center - right * radius, inward);
+      add_point(center + up * radius * 0.7f, inward);
+      add_point(capsule_a, inward);
+      add_point(capsule_b, inward);
       break;
     }
 
     case 4:
     case 5:
-    case 6:  // chest
-    {
-      out.reserve(3);
-      out.push_back(scaled_surface(right));
-      out.push_back(scaled_surface(-right));
-      if (hitbox.index == 6) {
-        out.push_back(scaled_surface(up));
-      }
+    case 6: {
+      const auto inward = 0.9f;
+
+      out.reserve(6);
+      add_point(center + right * radius, inward);
+      add_point(center - right * radius, inward);
+      add_point(center + up * radius * 0.65f, inward);
+      add_point(center - up * radius * 0.5f, inward);
+      add_point(center + (right + up).Normalized() * radius, inward);
+      add_point(capsule_a, inward);
       break;
     }
 
@@ -2136,11 +2144,14 @@ std::vector<math::Vector3> Rage::GenerateMultipoints(
     case 9:
     case 10:
     case 11:
-    case 12:  // legs / feet
-    {
-      out.reserve(2);
-      out.push_back(capsule_a);
-      out.push_back(capsule_b);
+    case 12: {
+      const auto inward = 0.85f;
+
+      out.reserve(4);
+      add_point(capsule_a, inward);
+      add_point(capsule_b, inward);
+      add_point(center + right * radius, inward);
+      add_point(center - right * radius, inward);
       break;
     }
 
@@ -2149,18 +2160,42 @@ std::vector<math::Vector3> Rage::GenerateMultipoints(
     case 15:
     case 16:
     case 17:
-    case 18:  // arms
-    {
-      out.reserve(1);
-      out.push_back(capsule_b);
+    case 18: {
+      const auto inward = 0.85f;
+      const auto fwd = (shoot_pos - center).Normalized();
+
+      out.reserve(3);
+      add_point(capsule_a, inward);
+      add_point(capsule_b, inward);
+      add_point(capsule_b - fwd * radius * 0.7f, inward);
       break;
     }
 
     default: {
+      const auto inward = 0.9f;
+
       out.reserve(2);
-      out.push_back(scaled_surface(right));
-      out.push_back(scaled_surface(-right));
+      add_point(center + right * radius, inward);
+      add_point(center - right * radius, inward);
       break;
+    }
+  }
+
+  if (dynamic && radius > 0.001f) {
+    const auto cone = std::max(inaccuracy + g_shared.Ctx().spread, 0.0f);
+    const auto dist = (center - shoot_pos).Length();
+    const auto denom = std::max(cone * dist, 1.0e-4f);
+
+    for (auto& point : out) {
+      const auto delta = point - center;
+      const auto reach = std::max(radius * 2.0f - delta.Length(), 0.0f);
+      auto probability = std::min(reach / denom, 1.0f);
+      probability *= probability;
+      point = center + delta * std::min(probability * scale, 1.0f);
+    }
+  } else {
+    for (auto& point : out) {
+      point = center + (point - center) * scale;
     }
   }
 

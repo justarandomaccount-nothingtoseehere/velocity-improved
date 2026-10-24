@@ -6,6 +6,7 @@
 #include "utilities/addresses/addresses.h"
 #include "utilities/logging/logging.h"
 #include "utilities/memory/memory.h"
+#include "utilities/random/random.h"
 
 namespace features::combat {
 
@@ -1065,10 +1066,48 @@ void Shared::InvalidateIfNeeded() {
   }
 }
 
-std::uint32_t Shared::GetSpreadSeed(const math::Vector3& angles,
-                                    int tick) const {
-  return memory::Call<std::uint32_t>(PATTERN(patterns::get_tick_view_angles),
-                                     nullptr, &angles, tick);
+void Shared::ApplyWeaponSpreadDensity(int item_def_idx, float recoil_index,
+                                      float* density) {
+  if (item_def_idx == cstypes::item_definition_index::kWeaponR8Revolver) {
+    const auto value = *density;
+    *density = 1.0f - value * value;
+  } else if (item_def_idx == cstypes::item_definition_index::kWeaponNegev &&
+             recoil_index < 3.0f) {
+    auto count = 3;
+    auto value = *density;
+    do {
+      --count;
+      value *= value;
+    } while (static_cast<float>(count) > recoil_index);
+    *density = 1.0f - value;
+  }
+}
+
+const std::array<Shared::SpreadSample, 64>& Shared::HitchanceScatter() {
+  static const std::array<SpreadSample, 64> samples = [] {
+    std::array<SpreadSample, 64> out{};
+
+    constexpr auto kTwoPi{6.2831855f};
+    constexpr auto kCount{64};
+    constexpr auto kLastSeed{255};
+
+    random::Stream stream{};
+    for (auto index = 0; index < kCount; ++index) {
+      const auto seed = 1 + (kLastSeed * index) / kCount;
+      stream.Seed(seed + 1);
+
+      const auto inaccuracy_density = stream.Float(0.0f, 1.0f);
+      const auto inaccuracy_theta = stream.Float(0.0f, kTwoPi);
+      const auto spread_density = stream.Float(0.0f, 1.0f);
+      const auto spread_theta = stream.Float(0.0f, kTwoPi);
+
+      out[index] = {inaccuracy_density,          std::cosf(inaccuracy_theta),
+                    std::sinf(inaccuracy_theta), spread_density,
+                    std::cosf(spread_theta),     std::sinf(spread_theta)};
+    }
+    return out;
+  }();
+  return samples;
 }
 
 math::Vector2 Shared::CalculateSpread(int seed, float accuracy, float spread,
@@ -1076,10 +1115,31 @@ math::Vector2 Shared::CalculateSpread(int seed, float accuracy, float spread,
                                       int num_bullets) const {
   math::Vector2 out{};
 
-  memory::Call<void>(PATTERN(patterns::weapon_calculate_spread),
-                     static_cast<std::int16_t>(item_def_idx), num_bullets, 0,
-                     static_cast<std::uint32_t>(seed + 1), accuracy, spread,
-                     recoil_index, &out.x, &out.y);
+  random::Stream stream{};
+  stream.Seed(seed + 1);
+
+  constexpr auto kTwoPi{6.2831855f};
+
+  auto inaccuracy_density{0.0f};
+  auto inaccuracy_theta{0.0f};
+
+  for (auto bullet = 0; bullet < num_bullets; ++bullet) {
+    if (bullet == 0) {
+      inaccuracy_density = stream.Float(0.0f, 1.0f);
+      inaccuracy_theta = stream.Float(0.0f, kTwoPi);
+
+      ApplyWeaponSpreadDensity(item_def_idx, recoil_index, &inaccuracy_density);
+    }
+
+    auto spread_density = stream.Float(0.0f, 1.0f);
+    ApplyWeaponSpreadDensity(item_def_idx, recoil_index, &spread_density);
+    const auto spread_theta = stream.Float(0.0f, kTwoPi);
+
+    out.x = std::cosf(inaccuracy_theta) * inaccuracy_density * accuracy +
+            std::cosf(spread_theta) * spread_density * spread;
+    out.y = std::sinf(inaccuracy_theta) * inaccuracy_density * accuracy +
+            std::sinf(spread_theta) * spread_density * spread;
+  }
 
   return out;
 }
@@ -1104,15 +1164,10 @@ float Shared::CalculateHitchance(const math::Vector3& shoot_position,
                                  const math::Vector3& aim_angle,
                                  const systems::Hitboxes::Entry& hitbox,
                                  const systems::Bones::Data& bone,
-                                 float inaccuracy, float spread,
-                                 int samples) const {
+                                 float inaccuracy, float spread) const {
   const auto total = spread + inaccuracy;
   if (total < 0.0001f) {
     return 1.0f;
-  }
-
-  if (samples <= 0) {
-    return 0.0f;
   }
 
   const auto rotation = bone.rotation;
@@ -1159,55 +1214,25 @@ float Shared::CalculateHitchance(const math::Vector3& shoot_position,
   math::Vector3 forward{}, left{}, up{};
   math::helpers::AngleVectorsLeft(aim_angle, &forward, &left, &up);
 
-  // Every candidate in a scan uses the same weapon state. The engine spread
-  // function is much more expensive than the capsule test, so calculate each
-  // deterministic seed once and reuse it for all candidate points.
-  struct SpreadCache {
-    float inaccuracy{};
-    float spread{};
-    float recoil_index{};
-    int item_def_idx{};
-    int num_bullets{};
-    int count{};
-    bool initialized{};
-    std::array<math::Vector2, 256> values{};
-  };
-
-  thread_local SpreadCache cache{};
-  if (!cache.initialized || cache.inaccuracy != inaccuracy ||
-      cache.spread != spread ||
-      cache.recoil_index != this->m_ctx_.recoil_index ||
-      cache.item_def_idx != this->m_ctx_.item_def_idx ||
-      cache.num_bullets != this->m_ctx_.num_bullets) {
-    cache.inaccuracy = inaccuracy;
-    cache.spread = spread;
-    cache.recoil_index = this->m_ctx_.recoil_index;
-    cache.item_def_idx = this->m_ctx_.item_def_idx;
-    cache.num_bullets = this->m_ctx_.num_bullets;
-    cache.count = 0;
-    cache.initialized = true;
-  }
-
-  const auto cached_samples =
-      std::min(samples, static_cast<int>(cache.values.size()));
-  for (auto i = cache.count; i < cached_samples; ++i) {
-    cache.values[i] = this->CalculateSpread(
-        i, inaccuracy, spread, this->m_ctx_.recoil_index,
-        this->m_ctx_.item_def_idx, this->m_ctx_.num_bullets);
-  }
-  cache.count = std::max(cache.count, cached_samples);
-
   auto hits{0};
 
-  for (auto i = 0; i < samples; ++i) {
-    const auto calculated_spread =
-        i < cached_samples
-            ? cache.values[i]
-            : this->CalculateSpread(
-                  i, inaccuracy, spread, this->m_ctx_.recoil_index,
-                  this->m_ctx_.item_def_idx, this->m_ctx_.num_bullets);
-    const auto direction =
-        forward + (left * calculated_spread.x) + (up * calculated_spread.y);
+  for (const auto& sample : HitchanceScatter()) {
+    auto inaccuracy_density = sample.inaccuracy_density;
+    auto spread_density = sample.spread_density;
+
+    ApplyWeaponSpreadDensity(this->m_ctx_.item_def_idx,
+                             this->m_ctx_.recoil_index, &inaccuracy_density);
+    ApplyWeaponSpreadDensity(this->m_ctx_.item_def_idx,
+                             this->m_ctx_.recoil_index, &spread_density);
+
+    const auto offset_x =
+        sample.cos_inaccuracy * inaccuracy_density * inaccuracy +
+        sample.cos_spread * spread_density * spread;
+    const auto offset_y =
+        sample.sin_inaccuracy * inaccuracy_density * inaccuracy +
+        sample.sin_spread * spread_density * spread;
+
+    const auto direction = forward + (left * offset_x) + (up * offset_y);
     const auto ray_end = direction.Normalized() * 8192.0f;
 
     auto hit{false};
@@ -1224,7 +1249,8 @@ float Shared::CalculateHitchance(const math::Vector3& shoot_position,
     }
   }
 
-  return static_cast<float>(hits) / static_cast<float>(samples);
+  constexpr auto kSamples{64};
+  return static_cast<float>(hits) / static_cast<float>(kSamples);
 }
 
 math::Vector3 Shared::FindSpreadCorrection(const math::Vector3& aim_angle,
@@ -1232,7 +1258,7 @@ math::Vector3 Shared::FindSpreadCorrection(const math::Vector3& aim_angle,
   for (auto i = 0; i < 720; i++) {
     const auto test_angles =
         math::Vector3{static_cast<float>(i) / 2.0f, aim_angle.y, 0.0f};
-    const auto seed = this->GetSpreadSeed(test_angles, tick);
+    const auto seed = random::SpreadSeed(test_angles, tick);
     const auto spread = this->CalculateSpread(
         seed, this->m_ctx_.inaccuracy, this->m_ctx_.spread,
         this->m_ctx_.recoil_index, this->m_ctx_.item_def_idx,
@@ -1243,7 +1269,7 @@ math::Vector3 Shared::FindSpreadCorrection(const math::Vector3& aim_angle,
         std::atan(std::sqrt(spread.x * spread.x + spread.y * spread.y)));
     adj_angle.z = -math::helpers::RadToDeg(std::atan2(spread.x, spread.y));
 
-    if (this->GetSpreadSeed(adj_angle, tick) == seed) {
+    if (random::SpreadSeed(adj_angle, tick) == seed) {
       return adj_angle;
     }
   }
