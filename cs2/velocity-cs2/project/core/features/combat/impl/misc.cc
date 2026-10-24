@@ -257,21 +257,15 @@ std::optional<float> Misc::Antiaim::MeasureEnemyRayYawOffset(
   const auto local_origin = memory::Read<math::Vector3>(
       local_game_scene_node + SCHEMA("CGameSceneNode", "m_vecAbsOrigin"_hash));
 
-  const auto head_bone =
-      systems::g_bones.Get(local.pawn, cstypes::bone_ids::kHead);
-  const auto neck_bone =
-      systems::g_bones.Get(local.pawn, cstypes::bone_ids::kNeck);
-  if (head_bone.position.LengthSqr() < 1.0f ||
-      neck_bone.position.LengthSqr() < 1.0f) {
+  const auto measure_bone = systems::g_bones.Get(
+      local.pawn, static_cast<std::uint32_t>(
+                      settings::g_combat.m_antiaim.measure_bone.value));
+  if (measure_bone.position.LengthSqr() < 1.0f) {
     return std::nullopt;
   }
 
-  const math::Vector2 head_horizontal{head_bone.position.x - local_origin.x,
-                                      head_bone.position.y - local_origin.y};
-  const math::Vector2 neck_horizontal{neck_bone.position.x - local_origin.x,
-                                      neck_bone.position.y - local_origin.y};
-
-  const auto body = (head_horizontal + neck_horizontal) * 0.5f;
+  const math::Vector2 body{measure_bone.position.x - local_origin.x,
+                           measure_bone.position.y - local_origin.y};
   if (body.LengthSqr() < 1.0e-6f) {
     return std::nullopt;
   }
