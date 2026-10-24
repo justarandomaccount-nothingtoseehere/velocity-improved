@@ -277,77 +277,97 @@ std::optional<float> Misc::Antiaim::MeasureEnemyRayYawOffset(
   static constexpr auto kRadToDeg{180.0f / std::numbers::pi_v<float>};
   this->m_pose_yaw_ = std::atan2f(axis.y, axis.x) * kRadToDeg;
 
-  const auto players =
-      systems::g_entities.GetByType(systems::Entities::Type::kPlayer);
+  auto candidate_pawn = features::combat::g_shared.CurrentTarget();
 
-  auto best_dist_sq = std::numeric_limits<float>::max();
-  auto best_pawn{std::uintptr_t{0}};
-  auto enemy_found{false};
+  if (candidate_pawn == local.pawn) {
+    candidate_pawn = 0;
+  }
 
-  for (const auto& p : players) {
-    if (!p.ptr || p.ptr == local.controller) {
-      continue;
-    }
+  if (candidate_pawn) {
+    const auto team = memory::Read<int>(
+        candidate_pawn + SCHEMA("C_BaseEntity", "m_iTeamNum"_hash));
+    const auto health = memory::Read<int>(
+        candidate_pawn + SCHEMA("C_BaseEntity", "m_iHealth"_hash));
 
-    if (!memory::Read<bool>(
-            p.ptr + SCHEMA("CCSPlayerController", "m_bPawnIsAlive"_hash))) {
-      continue;
-    }
-
-    const auto pawn_handle = memory::Read<std::uint32_t>(
-        p.ptr + SCHEMA("CBasePlayerController", "m_hPawn"_hash));
-    const auto pawn = systems::g_entities.Lookup(pawn_handle);
-
-    if (!pawn || pawn == local.pawn) {
-      continue;
-    }
-
-    const auto team =
-        memory::Read<int>(pawn + SCHEMA("C_BaseEntity", "m_iTeamNum"_hash));
-    if (!local.IsThisOtherTeam(team)) {
-      continue;
-    }
-
-    const auto health =
-        memory::Read<int>(pawn + SCHEMA("C_BaseEntity", "m_iHealth"_hash));
-    if (health <= 0) {
-      continue;
-    }
-
-    const auto enemy_game_scene_node = memory::Read<std::uintptr_t>(
-        pawn + SCHEMA("C_BaseEntity", "m_pGameSceneNode"_hash));
-    if (!enemy_game_scene_node) {
-      continue;
-    }
-
-    const auto enemy_origin = memory::Read<math::Vector3>(
-        enemy_game_scene_node +
-        SCHEMA("CGameSceneNode", "m_vecAbsOrigin"_hash));
-    const auto dx = enemy_origin.x - local_origin.x;
-    const auto dy = enemy_origin.y - local_origin.y;
-    const auto dist_sq = dx * dx + dy * dy;
-
-    if (dist_sq < best_dist_sq) {
-      best_dist_sq = dist_sq;
-      best_pawn = pawn;
-      enemy_found = true;
+    if (!local.IsThisOtherTeam(team) || health <= 0) {
+      candidate_pawn = 0;
     }
   }
 
-  if (!enemy_found) {
+  if (!candidate_pawn) {
+    const auto players =
+        systems::g_entities.GetByType(systems::Entities::Type::kPlayer);
+
+    auto best_dist_sq = std::numeric_limits<float>::max();
+
+    for (const auto& p : players) {
+      if (!p.ptr || p.ptr == local.controller) {
+        continue;
+      }
+
+      if (!memory::Read<bool>(
+              p.ptr + SCHEMA("CCSPlayerController", "m_bPawnIsAlive"_hash))) {
+        continue;
+      }
+
+      const auto pawn_handle = memory::Read<std::uint32_t>(
+          p.ptr + SCHEMA("CBasePlayerController", "m_hPawn"_hash));
+      const auto pawn = systems::g_entities.Lookup(pawn_handle);
+
+      if (!pawn || pawn == local.pawn) {
+        continue;
+      }
+
+      const auto team =
+          memory::Read<int>(pawn + SCHEMA("C_BaseEntity", "m_iTeamNum"_hash));
+      if (!local.IsThisOtherTeam(team)) {
+        continue;
+      }
+
+      const auto health =
+          memory::Read<int>(pawn + SCHEMA("C_BaseEntity", "m_iHealth"_hash));
+      if (health <= 0) {
+        continue;
+      }
+
+      const auto enemy_game_scene_node = memory::Read<std::uintptr_t>(
+          pawn + SCHEMA("C_BaseEntity", "m_pGameSceneNode"_hash));
+      if (!enemy_game_scene_node) {
+        continue;
+      }
+
+      const auto enemy_origin = memory::Read<math::Vector3>(
+          enemy_game_scene_node +
+          SCHEMA("CGameSceneNode", "m_vecAbsOrigin"_hash));
+      const auto dx = enemy_origin.x - local_origin.x;
+      const auto dy = enemy_origin.y - local_origin.y;
+      const auto dist_sq = dx * dx + dy * dy;
+
+      if (dist_sq < best_dist_sq) {
+        best_dist_sq = dist_sq;
+        candidate_pawn = pawn;
+      }
+    }
+  }
+
+  if (!candidate_pawn) {
     return std::nullopt;
   }
 
-  this->m_measure_enemy_ = best_pawn;
+  this->m_measure_enemy_ = candidate_pawn;
 
   const auto enemy_scene = memory::Read<std::uintptr_t>(
-      best_pawn + SCHEMA("C_BaseEntity", "m_pGameSceneNode"_hash));
+      candidate_pawn + SCHEMA("C_BaseEntity", "m_pGameSceneNode"_hash));
+  if (!enemy_scene) {
+    return std::nullopt;
+  }
+
   const auto enemy_abs = memory::Read<math::Vector3>(
       enemy_scene + SCHEMA("CGameSceneNode", "m_vecAbsOrigin"_hash));
   const auto enemy_eye =
       enemy_abs +
       memory::Read<math::Vector3>(
-          best_pawn + SCHEMA("C_BaseModelEntity", "m_vecViewOffset"_hash));
+          candidate_pawn + SCHEMA("C_BaseModelEntity", "m_vecViewOffset"_hash));
 
   const auto toward_enemy =
       math::Vector2{enemy_eye.x - local_origin.x, enemy_eye.y - local_origin.y};
@@ -479,6 +499,29 @@ float Misc::Antiaim::GetYaw(const math::Vector3& view_angles,
   }
 
   const auto pick_target_yaw = [&]() -> std::optional<float> {
+    const auto shared_pawn = features::combat::g_shared.CurrentTarget();
+
+    if (shared_pawn && shared_pawn != local.pawn) {
+      const auto team = memory::Read<int>(
+          shared_pawn + SCHEMA("C_BaseEntity", "m_iTeamNum"_hash));
+      const auto health = memory::Read<int>(
+          shared_pawn + SCHEMA("C_BaseEntity", "m_iHealth"_hash));
+      const auto shared_scene = memory::Read<std::uintptr_t>(
+          shared_pawn + SCHEMA("C_BaseEntity", "m_pGameSceneNode"_hash));
+
+      if (local.IsThisOtherTeam(team) && health > 0 && shared_scene) {
+        const auto shared_origin = memory::Read<math::Vector3>(
+            shared_scene + SCHEMA("CGameSceneNode", "m_vecAbsOrigin"_hash));
+        const auto shared_eye =
+            shared_origin + memory::Read<math::Vector3>(
+                                shared_pawn + SCHEMA("C_BaseModelEntity",
+                                                     "m_vecViewOffset"_hash));
+        const auto angle = math::helpers::CalculateAngle(eye_pos, shared_eye);
+
+        return angle.y - base_yaw_offset;
+      }
+    }
+
     auto best_yaw = base_yaw;
     auto best_threat_score = std::numeric_limits<float>::max();
 

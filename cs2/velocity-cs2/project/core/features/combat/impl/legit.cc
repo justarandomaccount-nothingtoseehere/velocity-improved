@@ -67,6 +67,7 @@ void Legit::OnCreateMove(systems::Input::Usercmd* cmd) {
     this->m_target_ =
         this->FindTarget(shoot_position, detection_angles, config, local);
     if (this->m_target_.HasTarget()) {
+      g_shared.SetCurrentTarget(this->m_target_.pawn);
       this->ApplyAimbot(cmd, this->m_target_, view_angles, aim_punch, config,
                         local);
     }

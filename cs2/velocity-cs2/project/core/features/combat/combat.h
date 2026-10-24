@@ -288,6 +288,13 @@ class Shared {
                     const math::Vector3& capsule_b, float radius,
                     float& out_fraction) const;
 
+  void SetCurrentTarget(std::uintptr_t pawn) noexcept {
+    this->m_current_target_.store(pawn, std::memory_order_relaxed);
+  }
+  [[nodiscard]] std::uintptr_t CurrentTarget() const noexcept {
+    return this->m_current_target_.load(std::memory_order_relaxed);
+  }
+
  private:
   Context m_ctx_{};
   Penetration m_pen_{};
@@ -300,6 +307,7 @@ class Shared {
       nullptr};
 
   int m_last_shoot_tick_{};
+  std::atomic<std::uintptr_t> m_current_target_{};
 };
 
 class Misc {

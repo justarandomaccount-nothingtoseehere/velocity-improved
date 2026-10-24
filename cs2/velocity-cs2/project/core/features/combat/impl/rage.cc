@@ -1724,6 +1724,7 @@ void Rage::FireGun(systems::Input::Usercmd* cmd, const Target& tgt,
     return;
   }
 
+  g_shared.SetCurrentTarget(tgt.hit.pawn);
   this->m_firing_this_tick_ = true;
 
   const auto base = cmd->csgo_user_cmd.MutableBase();
@@ -1916,6 +1917,7 @@ void Rage::FireMelee(systems::Input::Usercmd* cmd, const Target& tgt,
     return;
   }
 
+  g_shared.SetCurrentTarget(tgt.hit.pawn);
   this->m_firing_this_tick_ = true;
 
   const auto base = cmd->csgo_user_cmd.MutableBase();
