@@ -256,6 +256,12 @@ class Shared {
                                          float required) const;
   [[nodiscard]] math::Vector3 PredictShotOrigin(
       const math::Vector3& eye, const math::Vector3& velocity) const;
+  [[nodiscard]] bool SpreadBulletHits(unsigned int seed,
+                                      const math::Vector3& shoot_position,
+                                      const math::Vector3& aim_angle,
+                                      const systems::Hitboxes::Entry& hitbox,
+                                      const systems::Bones::Data& bone,
+                                      float inaccuracy, float spread) const;
   [[nodiscard]] math::Vector3 FindSpreadCorrection(
       const math::Vector3& aim_angle, int tick) const;
   [[nodiscard]] math::Vector3 GetEyePosition(std::uintptr_t local_pawn) const;
@@ -633,7 +639,9 @@ class Rage {
       const systems::Local::Snapshot& local) const;
   [[nodiscard]] Target SelectBest(const AimContext& aim_ctx,
                                   const std::vector<ScanHit>& hits,
-                                  float eval_inaccuracy, float needed_hc) const;
+                                  float eval_inaccuracy, float needed_hc,
+                                  const systems::Local::Snapshot& local,
+                                  bool validate_seed) const;
   [[nodiscard]] float EvaluateHitchance(const ScanHit& hit,
                                         const AimContext& ctx, float inaccuracy,
                                         float min_hitchance) const;

@@ -27,6 +27,7 @@ struct Combat {
       xui::setting no_spread{false, {}, "no spread", "ragebot"};
       xui::setting doubletap{false, {}, "doubletap", "ragebot"};
       xui::setting double_precision{false, {}, "double precision", "ragebot"};
+      xui::setting deterministic{false, {}, "deterministic", "ragebot"};
       xui::setting body_aim{false, {}, "force b-aim", "ragebot"};
       xui::setting force_shot_air{false, {}, "force shot in air", "ragebot"};
       xui::setting force_shot{false, {}, "force shot on ground", "ragebot"};
@@ -60,6 +61,7 @@ struct Combat {
         this->no_spread.category = s;
         this->doubletap.category = s;
         this->double_precision.category = s;
+        this->deterministic.category = s;
         this->body_aim.category = s;
         this->force_shot_air.category = s;
         this->force_shot.category = s;

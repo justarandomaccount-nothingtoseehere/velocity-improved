@@ -1309,6 +1309,66 @@ bool Shared::SpreadChanceAtLeast(const math::Vector3& shoot_position,
   return false;
 }
 
+bool Shared::SpreadBulletHits(unsigned int seed,
+                              const math::Vector3& shoot_position,
+                              const math::Vector3& aim_angle,
+                              const systems::Hitboxes::Entry& hitbox,
+                              const systems::Bones::Data& bone,
+                              float inaccuracy, float spread) const {
+  if (spread + inaccuracy < 0.0001f) {
+    return true;
+  }
+
+  const auto offset =
+      this->CalculateSpread(seed, inaccuracy, spread, this->m_ctx_.recoil_index,
+                            this->m_ctx_.item_def_idx, 1);
+
+  math::Vector3 forward{}, left{}, up{};
+  math::helpers::AngleVectorsLeft(aim_angle, &forward, &left, &up);
+  const auto direction = forward + left * offset.x + up * offset.y;
+  const auto ray_end = direction.Normalized() * 8192.0f;
+
+  if (hitbox.radius > 0.001f) {
+    const auto rotation = bone.rotation;
+    const auto capsule_start =
+        rotation.RotateVector(hitbox.mins) + bone.position;
+    const auto capsule_end = rotation.RotateVector(hitbox.maxs) + bone.position;
+    auto fraction{1.0f};
+    return this->RayVsCapsule(shoot_position, ray_end, capsule_start,
+                              capsule_end, hitbox.radius, fraction);
+  }
+
+  const auto test =
+      this->MakeSpreadTest(shoot_position, aim_angle, hitbox, bone);
+  const auto direction_local = test.inverse.RotateVector(ray_end);
+  auto entry{0.0f};
+  auto exit{1.0f};
+
+  const auto intersect_axis = [&](float origin, float delta, float minimum,
+                                  float maximum) {
+    if (std::fabs(delta) < 1.0e-8f) {
+      return origin >= minimum && origin <= maximum;
+    }
+
+    auto first = (minimum - origin) / delta;
+    auto second = (maximum - origin) / delta;
+    if (first > second) {
+      std::swap(first, second);
+    }
+
+    entry = std::max(entry, first);
+    exit = std::min(exit, second);
+    return entry <= exit;
+  };
+
+  return intersect_axis(test.box_ray_origin.x, direction_local.x,
+                        test.hitbox.mins.x, test.hitbox.maxs.x) &&
+         intersect_axis(test.box_ray_origin.y, direction_local.y,
+                        test.hitbox.mins.y, test.hitbox.maxs.y) &&
+         intersect_axis(test.box_ray_origin.z, direction_local.z,
+                        test.hitbox.mins.z, test.hitbox.maxs.z);
+}
+
 math::Vector3 Shared::PredictShotOrigin(const math::Vector3& eye,
                                         const math::Vector3& velocity) const {
   const auto speed = velocity.Length2d();

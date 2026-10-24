@@ -615,8 +615,8 @@ void Rage::RunGun(systems::Input::Usercmd* cmd, const AimContext& ctx,
       return;
     }
 
-    const auto best =
-        this->SelectBest(ctx, all_hits, shared_ctx.inaccuracy, needed_hc);
+    const auto best = this->SelectBest(ctx, all_hits, shared_ctx.inaccuracy,
+                                       needed_hc, local, true);
     if (!best.valid) {
       duckpeek.OnTargetLost();
       return;
@@ -674,8 +674,8 @@ void Rage::RunGun(systems::Input::Usercmd* cmd, const AimContext& ctx,
     ZoneScopedN("rage: scan primary");
     return scan_from_eye_candidates({}, shot_inaccuracy, effective_hc);
   }();
-  const auto best =
-      this->SelectBest(ctx, current_hits, shot_inaccuracy, effective_hc);
+  const auto best = this->SelectBest(ctx, current_hits, shot_inaccuracy,
+                                     effective_hc, local, true);
 
   const auto accurate = best.valid && best.hitchance >= effective_hc;
   const auto max_acc = g_shared.IsMaxAccuracy(shot_inaccuracy, peek_standing);
@@ -733,8 +733,8 @@ void Rage::RunGun(systems::Input::Usercmd* cmd, const AimContext& ctx,
       const auto future_offset = stop->eye - primary_eye;
       auto planned_hits =
           scan_from_eye_candidates(future_offset, stop->inaccuracy, 0.0f);
-      const auto planned =
-          this->SelectBest(ctx, planned_hits, stop->inaccuracy, needed_hc);
+      const auto planned = this->SelectBest(ctx, planned_hits, stop->inaccuracy,
+                                            needed_hc, local, false);
       this->m_should_stop_ = planned.valid;
     } else {
       this->m_should_stop_ = best.valid;
@@ -1338,7 +1338,16 @@ std::vector<Rage::ScanHit> Rage::ScanPlayer(
 
 Rage::Target Rage::SelectBest(const AimContext& aim_ctx,
                               const std::vector<ScanHit>& hits,
-                              float eval_inaccuracy, float needed_hc) const {
+                              float eval_inaccuracy, float needed_hc,
+                              const systems::Local::Snapshot& local,
+                              bool validate_seed) const {
+  const auto tick_base =
+      local.IsValid() && local.controller != 0
+          ? memory::Read<std::int32_t>(
+                local.controller +
+                SCHEMA("CBasePlayerController", "m_nTickBase"_hash))
+          : 0;
+
   auto hitgroup_priority = [](int hitbox_index) -> int {
     if (hitbox_index == 0) {
       return 4;
@@ -1465,6 +1474,13 @@ Rage::Target Rage::SelectBest(const AimContext& aim_ctx,
                                        eval_eye, h.aim_angle, h.hitbox, bone,
                                        eval_inaccuracy, aim_ctx.spread)
                                  : 0.0f);
+      if (validate_seed && config.deterministic.value &&
+          !config.no_spread.value &&
+          !g_shared.SpreadBulletHits(random::SpreadSeed(h.aim_angle, tick_base),
+                                     eval_eye, h.aim_angle, h.hitbox, bone,
+                                     eval_inaccuracy, aim_ctx.spread)) {
+        continue;
+      }
       if (h.hitbox_index == 0)
         max_head_hitchance = std::max(max_head_hitchance, hc);
       const auto hp = static_cast<float>(h.health);
