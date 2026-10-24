@@ -19,10 +19,10 @@ namespace bone_ids {
 
 constexpr auto kHead{7u};
 constexpr auto kNeck{6u};
-constexpr auto kSpine1{2u};
-constexpr auto kSpine2{3u};
-constexpr auto kSpine3{4u};
-constexpr auto kSpine4{23u};
+constexpr auto kSpine0{2u};
+constexpr auto kSpine1{3u};
+constexpr auto kSpine2{4u};
+constexpr auto kChest{23u};
 constexpr auto kPelvis{1u};
 
 constexpr auto kLeftClavicle{8u};
@@ -42,6 +42,10 @@ constexpr auto kLeftFoot{19u};
 constexpr auto kRightHip{20u};
 constexpr auto kRightKnee{21u};
 constexpr auto kRightFoot{22u};
+
+constexpr auto kGun{24u};
+constexpr auto kLeftEye{25u};
+constexpr auto kRightEye{26u};
 
 }  // namespace bone_ids
 

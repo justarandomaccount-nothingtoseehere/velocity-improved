@@ -348,9 +348,16 @@ class Bones {
     math::Quaternion rotation{};
   };
 
+  static_assert(sizeof(math::Vector3) == 12);
+  static_assert(sizeof(math::Quaternion) == 16);
+  static_assert(sizeof(Data) == 32);
+
+  static constexpr auto kMaxBoneCount{1024};
+  static constexpr auto kBonesMax{27u};
+
   [[nodiscard]] static int GetCount(std::uintptr_t game_scene_node);
   [[nodiscard]] Data Get(std::uintptr_t entity, std::uint32_t bone_id);
-  [[nodiscard]] std::array<Data, 27> GetSkeleton(std::uintptr_t entity);
+  [[nodiscard]] std::array<Data, kBonesMax> GetSkeleton(std::uintptr_t entity);
 
  private:
   [[nodiscard]] std::uintptr_t GetBoneCache(std::uintptr_t entity,

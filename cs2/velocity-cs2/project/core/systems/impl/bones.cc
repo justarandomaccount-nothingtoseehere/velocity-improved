@@ -8,14 +8,16 @@ namespace systems {
 
 int Bones::GetCount(std::uintptr_t game_scene_node) {
   if (!game_scene_node) return 0;
-  const auto model_handle =
-      memory::Read<std::uintptr_t>(game_scene_node + 0x1e0);
+  const auto model_handle = memory::Read<std::uintptr_t>(
+      game_scene_node +
+      static_cast<std::ptrdiff_t>(
+          SCHEMA("CSkeletonInstance", "m_modelState"_hash)) +
+      static_cast<std::ptrdiff_t>(SCHEMA("CModelState", "m_hModel"_hash)));
   if (!model_handle) return 0;
   const auto model = memory::Read<std::uintptr_t>(model_handle);
   if (!model) return 0;
-  // CModel::m_modelSkeleton starts with CRenderSkeleton::m_boneName.
-  const auto count = memory::Read<int>(model + 0x188);
-  return count > 0 && count <= 1024 ? count : 0;
+  const auto count = memory::Read<int>(model + 0x188 + 0xC);
+  return count > 0 && count <= kMaxBoneCount ? count : 0;
 }
 
 Bones::Data Bones::Get(std::uintptr_t entity, std::uint32_t bone_id) {
@@ -36,11 +38,11 @@ Bones::Data Bones::Get(std::uintptr_t entity, std::uint32_t bone_id) {
   return result;
 }
 
-std::array<Bones::Data, 27> Bones::GetSkeleton(std::uintptr_t entity) {
+std::array<Bones::Data, kBonesMax> Bones::GetSkeleton(std::uintptr_t entity) {
   static constexpr std::array<std::uint32_t, 21> kBones{
-      cstypes::bone_ids::kPelvis,        cstypes::bone_ids::kSpine1,
-      cstypes::bone_ids::kSpine2,        cstypes::bone_ids::kSpine3,
-      cstypes::bone_ids::kSpine4,        cstypes::bone_ids::kNeck,
+      cstypes::bone_ids::kPelvis,        cstypes::bone_ids::kSpine0,
+      cstypes::bone_ids::kSpine1,        cstypes::bone_ids::kSpine2,
+      cstypes::bone_ids::kChest,         cstypes::bone_ids::kNeck,
       cstypes::bone_ids::kHead,          cstypes::bone_ids::kLeftClavicle,
       cstypes::bone_ids::kLeftShoulder,  cstypes::bone_ids::kLeftElbow,
       cstypes::bone_ids::kLeftHand,      cstypes::bone_ids::kRightClavicle,
@@ -50,7 +52,7 @@ std::array<Bones::Data, 27> Bones::GetSkeleton(std::uintptr_t entity) {
       cstypes::bone_ids::kRightHip,      cstypes::bone_ids::kRightKnee,
       cstypes::bone_ids::kRightFoot};
 
-  std::array<Data, 27> skeleton{};
+  std::array<Data, kBonesMax> skeleton{};
 
   auto count{0};
   const auto cache = this->GetBoneCache(entity, &count);
