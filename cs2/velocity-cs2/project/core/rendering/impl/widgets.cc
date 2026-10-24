@@ -14,7 +14,7 @@ namespace rendering {
 void Widgets::Draw() {
   auto& dl = xdraw::get();
 
-  const auto& widget_cfg = settings::g_misc.m_widgets.m_glass;
+  auto& widget_cfg = settings::g_misc.m_widgets.m_glass;
   const auto [screen_w, screen_h] = xdraw::viewport_size();
   const auto& input = xui::ctx().input;
 
