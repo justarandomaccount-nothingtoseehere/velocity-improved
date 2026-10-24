@@ -274,6 +274,9 @@ std::optional<float> Misc::Antiaim::MeasureEnemyRayYawOffset(
     return std::nullopt;
   }
 
+  static constexpr auto kRadToDeg{180.0f / std::numbers::pi_v<float>};
+  this->m_pose_yaw_ = std::atan2f(axis.y, axis.x) * kRadToDeg;
+
   const auto players =
       systems::g_entities.GetByType(systems::Entities::Type::kPlayer);
 
@@ -352,7 +355,6 @@ std::optional<float> Misc::Antiaim::MeasureEnemyRayYawOffset(
     return std::nullopt;
   }
 
-  static constexpr auto kRadToDeg{180.0f / std::numbers::pi_v<float>};
   static constexpr auto kAxisBias{179.0f};
 
   const auto target_yaw =
@@ -594,10 +596,14 @@ float Misc::Antiaim::GetYaw(const math::Vector3& view_angles,
 
   this->m_head_offset_ = 0.0f;
 
-  static constexpr auto kRollEpsilon{0.05f};
+  static constexpr auto kRollDeadband{0.35f};
   static constexpr auto kRollMaxStep{12.0f};
   static constexpr auto kYawJumpGap{90.0f};
-  static constexpr auto kRollFreezeTicks{12};
+  static constexpr auto kBodySlewRate{12.0f};
+  static constexpr auto kRollFreezeMin{2};
+  static constexpr auto kRollFreezeCap{30};
+  static constexpr auto kAxisSettleVel{1.0f};
+  static constexpr auto kPoseSettleTicks{2};
 
   const auto compensating = aa.auto_yaw_adjust.value && !aa.spin.value;
 
@@ -606,12 +612,12 @@ float Misc::Antiaim::GetYaw(const math::Vector3& view_angles,
     this->m_roll_sign_ = 0;
     this->m_roll_streak_ = 0;
     this->m_roll_freeze_ = 0;
+    this->m_pose_settle_ = 0;
   }
 
   const auto commanded_yaw = yaw;
-  const auto yaw_jumped =
-      std::fabsf(math::helpers::NormalizeYaw(
-          commanded_yaw - this->m_prev_commanded_yaw_)) > kYawJumpGap;
+  const auto jump_delta = std::fabsf(
+      math::helpers::NormalizeYaw(commanded_yaw - this->m_prev_commanded_yaw_));
   this->m_prev_commanded_yaw_ = commanded_yaw;
   const auto side_flipped = this->m_yaw_side_ != this->m_prev_yaw_side_;
   this->m_prev_yaw_side_ = this->m_yaw_side_;
@@ -620,16 +626,35 @@ float Misc::Antiaim::GetYaw(const math::Vector3& view_angles,
     this->m_head_offset_ = *ray_offset;
 
     if (compensating) {
-      if (this->m_measure_enemy_ != this->m_yawed_enemy_ || yaw_jumped ||
-          side_flipped) {
+      if (this->m_measure_enemy_ != this->m_yawed_enemy_ || side_flipped ||
+          jump_delta > kYawJumpGap) {
         this->m_roll_sign_ = 0;
         this->m_roll_streak_ = 0;
-        this->m_roll_freeze_ = kRollFreezeTicks;
+        this->m_pose_settle_ = 0;
+
+        const auto slew_ticks =
+            static_cast<int>(std::ceil(jump_delta / kBodySlewRate)) +
+            kRollFreezeMin;
+        this->m_roll_freeze_ =
+            std::clamp(slew_ticks, kRollFreezeMin, kRollFreezeCap);
         this->m_yawed_enemy_ = this->m_measure_enemy_;
       }
 
       if (this->m_roll_freeze_ > 0) {
         --this->m_roll_freeze_;
+
+        if (!aa.jitter.value) {
+          const auto axis_vel = math::helpers::NormalizeYaw(
+              this->m_pose_yaw_ - this->m_pose_yaw_prev_);
+
+          if (std::fabsf(axis_vel) < kAxisSettleVel) {
+            if (++this->m_pose_settle_ >= kPoseSettleTicks) {
+              this->m_roll_freeze_ = 0;
+            }
+          } else {
+            this->m_pose_settle_ = 0;
+          }
+        }
       } else {
         const auto gap = std::fabsf(*ray_offset);
         const auto sign = *ray_offset >= 0.0f ? 1 : -1;
@@ -642,11 +667,13 @@ float Misc::Antiaim::GetYaw(const math::Vector3& view_angles,
         }
 
         const auto min_streak = aa.jitter.value ? 1 : 2;
-        if (gap >= kRollEpsilon && this->m_roll_streak_ >= min_streak) {
+        if (gap > kRollDeadband && this->m_roll_streak_ >= min_streak) {
           this->m_roll_adjust_ +=
               std::clamp(*ray_offset, -kRollMaxStep, kRollMaxStep);
         }
       }
+
+      this->m_pose_yaw_prev_ = this->m_pose_yaw_;
     }
 
     yaw += this->m_roll_adjust_;

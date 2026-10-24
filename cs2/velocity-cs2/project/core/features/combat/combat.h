@@ -340,6 +340,9 @@ class Misc {
     int m_roll_sign_{};
     int m_roll_streak_{};
     int m_roll_freeze_{};
+    int m_pose_settle_{};
+    float m_pose_yaw_{};
+    float m_pose_yaw_prev_{};
     float m_prev_commanded_yaw_{};
     int m_prev_yaw_side_{};
     int m_modifier_tick_{};
