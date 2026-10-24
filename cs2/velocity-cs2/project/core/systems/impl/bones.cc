@@ -38,7 +38,8 @@ Bones::Data Bones::Get(std::uintptr_t entity, std::uint32_t bone_id) {
   return result;
 }
 
-std::array<Bones::Data, kBonesMax> Bones::GetSkeleton(std::uintptr_t entity) {
+std::array<Bones::Data, Bones::kBonesMax> Bones::GetSkeleton(
+    std::uintptr_t entity) {
   static constexpr std::array<std::uint32_t, 21> kBones{
       cstypes::bone_ids::kPelvis,        cstypes::bone_ids::kSpine0,
       cstypes::bone_ids::kSpine1,        cstypes::bone_ids::kSpine2,
