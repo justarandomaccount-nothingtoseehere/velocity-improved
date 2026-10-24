@@ -575,6 +575,8 @@ float Misc::Antiaim::GetYaw(const math::Vector3& view_angles,
 
   this->m_head_offset_ = 0.0f;
 
+  static constexpr auto kRollEpsilon{0.05f};
+
   const auto compensating =
       settings::g_combat.m_antiaim.auto_yaw_adjust.value &&
       settings::g_combat.m_antiaim.pitch !=
@@ -587,7 +589,7 @@ float Misc::Antiaim::GetYaw(const math::Vector3& view_angles,
   if (const auto ray_offset = this->MeasureEnemyRayYawOffset(local)) {
     this->m_head_offset_ = *ray_offset;
 
-    if (compensating && std::fabsf(*ray_offset) >= 1.0f) {
+    if (compensating && std::fabsf(*ray_offset) >= kRollEpsilon) {
       this->m_roll_adjust_ += *ray_offset;
     }
 
