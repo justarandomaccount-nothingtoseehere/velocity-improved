@@ -40,6 +40,10 @@ void Misc::Antiaim::OnCreateMove(systems::Input::Usercmd* cmd) {
     return;
   }
 
+  if (!local.is_alive || !local.pawn) {
+    return;
+  }
+
   const auto view_angles = systems::g_input.GetViewAngles();
   const auto& ctx = g_shared.Ctx();
 
@@ -1160,6 +1164,12 @@ void Misc::Quickpeek::OnCreateMove(systems::Input::Usercmd* cmd) {
 
   const auto local = systems::g_local.Get();
   const auto& ctx = g_shared.Ctx();
+
+  if (!local.is_alive || !local.pawn || systems::g_local.IsInCinematic() ||
+      systems::g_local.IsInTimeFreeze()) {
+    this->Reset();
+    return;
+  }
 
   if (ctx.weapon_type < cstypes::weapon_type::kPistol ||
       ctx.weapon_type > cstypes::weapon_type::kLmg) {
