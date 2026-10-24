@@ -26,6 +26,7 @@ struct Combat {
       xui::setting silent{true, {}, "silent", "ragebot"};
       xui::setting no_spread{false, {}, "no spread", "ragebot"};
       xui::setting doubletap{false, {}, "doubletap", "ragebot"};
+      xui::setting double_precision{false, {}, "double precision", "ragebot"};
       xui::setting body_aim{false, {}, "force b-aim", "ragebot"};
       xui::setting force_shot_air{false, {}, "force shot in air", "ragebot"};
       xui::setting force_shot{false, {}, "force shot on ground", "ragebot"};
@@ -44,9 +45,11 @@ struct Combat {
           false, {}, "hit chance override", "ragebot"};
 
       config::val<float> pointscale{85.0f};
+      config::val<int> double_precision_ticks{2};
       xui::setting dynamic_pointscale{
           true, {}, "dynamic point scale", "ragebot"};
       xui::setting debug_multipoints{false, {}, "debug multipoints", "ragebot"};
+      xui::setting safe_points{true, {}, "safe points", "ragebot"};
 
       config::bools<6> hitboxes{{true, true, true, true, true, true}};
 
@@ -56,6 +59,7 @@ struct Combat {
         this->silent.category = s;
         this->no_spread.category = s;
         this->doubletap.category = s;
+        this->double_precision.category = s;
         this->body_aim.category = s;
         this->force_shot_air.category = s;
         this->force_shot.category = s;
@@ -63,6 +67,7 @@ struct Combat {
         this->hitchance_override.category = s;
         this->dynamic_pointscale.category = s;
         this->debug_multipoints.category = s;
+        this->safe_points.category = s;
 
         this->max_fov.reg(s, "max fov");
         this->hitchance.reg(s, "hit chance");
@@ -70,6 +75,7 @@ struct Combat {
         this->min_damage_override_value.reg(s, "min damage override value");
         this->hitchance_override_value.reg(s, "hit chance override value");
         this->pointscale.reg(s, "point scale");
+        this->double_precision_ticks.reg(s, "double precision ticks");
         this->hitboxes.reg(s, "hitboxes");
       }
 

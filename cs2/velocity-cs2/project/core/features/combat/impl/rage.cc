@@ -179,17 +179,25 @@ int Rage::DoubletapCycleTicks() const {
 }
 
 bool Rage::DoubletapBuildClaim(const math::Vector3& hit_position,
+                               const Shared::Lagcomp::Record& record,
                                int record_tick, math::Vector3& out_angle) {
   const auto& ctx = g_shared.Ctx();
-  if (!ctx.weapon_services || record_tick <= 0) {
+  if (!ctx.weapon_services || record_tick <= 0 ||
+      record.simulation_time <= 0.0f) {
     return false;
   }
-  const auto eye = g_shared.GetShootPositionAtTick(record_tick, 0.0f);
+
+  const auto claim_time = cstypes::TickFraction::FromValue(
+      record.simulation_time / cstypes::kTickInterval);
+  const auto eye =
+      g_shared.GetShootPositionAtTick(claim_time.tick, claim_time.frac);
   if (eye.LengthSqr() < 1.0f) {
     return false;
   }
+
   out_angle = math::helpers::CalculateAngle(eye, hit_position);
-  m_dt_claim_tick_ = record_tick;
+  m_dt_claim_tick_ = claim_time.tick;
+  m_dt_claim_frac_ = claim_time.frac;
   return true;
 }
 
@@ -201,6 +209,8 @@ void Rage::UpdateDoubletap(systems::Input::Usercmd* cmd) {
       ctx.item_def_idx == cstypes::item_definition_index::kWeaponR8Revolver) {
     m_dt_state_ = DoubletapState::kIdle;
     m_dt_charge_tick_ = -1;
+    m_dt_claim_tick_ = 0;
+    m_dt_claim_frac_ = 0.0f;
     m_dt_charged_ = false;
     return;
   }
@@ -222,6 +232,7 @@ void Rage::UpdateDoubletap(systems::Input::Usercmd* cmd) {
     cmd->buttons.value_scroll &= ~cstypes::command_buttons::kInAttack;
     m_dt_state_ = DoubletapState::kClaim;
     m_dt_claim_tick_ = now + 1;
+    m_dt_claim_frac_ = 0.0f;
     return;
   }
 
@@ -567,7 +578,8 @@ void Rage::RunGun(systems::Input::Usercmd* cmd, const AimContext& ctx,
           continue;
         }
 
-        if (this->EvaluateHitchance(hit, ctx, inaccuracy) >= min_hitchance) {
+        if (this->EvaluateHitchance(hit, ctx, inaccuracy, min_hitchance) >=
+            min_hitchance) {
           reached = true;
           break;
         }
@@ -1007,6 +1019,9 @@ std::vector<Rage::ScanHit> Rage::ScanPlayer(
     return {};
   }
 
+  const auto shoot_origin = g_shared.PredictShotOrigin(
+      eye, systems::g_prediction.Pre().networked_velocity);
+
   const auto& shared_ctx = g_shared.Ctx();
   const auto& config =
       settings::g_combat.m_ragebot.GetGroup(shared_ctx.weapon_type);
@@ -1072,6 +1087,70 @@ std::vector<Rage::ScanHit> Rage::ScanPlayer(
     bool is_center;
   };
 
+  const Shared::Lagcomp::Record* extent_low{};
+  const Shared::Lagcomp::Record* extent_high{};
+  for (auto ri = 0; ri < cand.record_count; ++ri) {
+    const auto* extremum = cand.records[ri];
+    if (!extremum || !extremum->valid) {
+      continue;
+    }
+
+    if (!extent_low ||
+        extremum->simulation_time < extent_low->simulation_time) {
+      extent_low = extremum;
+    }
+    if (!extent_high ||
+        extremum->simulation_time > extent_high->simulation_time) {
+      extent_high = extremum;
+    }
+  }
+
+  const auto in_lens = [&](const systems::Hitboxes::Entry& hb,
+                           const math::Vector3& point) {
+    if (!config.safe_points.value || hb.radius <= 0.001f) {
+      return true;
+    }
+
+    const auto direction = (point - shoot_origin).Normalized();
+    const auto basis_angle = math::helpers::VectorToAngle(direction);
+
+    math::Vector3 left{}, up{};
+    math::helpers::AngleVectorsLeft(basis_angle, nullptr, &left, &up);
+    const auto right = math::Vector3{-left.x, -left.y, -left.z};
+
+    const auto view_of = [&](const math::Vector3& world) {
+      const auto relative = world - shoot_origin;
+      return math::Vector3{relative.Dot(right), relative.Dot(up), 0.0f};
+    };
+
+    const auto point_view = view_of(point);
+
+    for (const auto* extremum : {extent_low, extent_high}) {
+      if (!extremum || extremum == record || hb.bone < 0 ||
+          hb.bone >= extremum->bone_count) {
+        continue;
+      }
+
+      const auto& extremum_bone = extremum->bones[hb.bone];
+      if (extremum_bone.position.LengthSqr() < 1.0f) {
+        continue;
+      }
+
+      const auto extremum_center =
+          extremum_bone.rotation.RotateVector((hb.mins + hb.maxs) * 0.5f) +
+          extremum_bone.position;
+      const auto center_view = view_of(extremum_center);
+
+      const auto dx = point_view.x - center_view.x;
+      const auto dy = point_view.y - center_view.y;
+      if (dx * dx + dy * dy > hb.radius * hb.radius) {
+        return false;
+      }
+    }
+
+    return true;
+  };
+
   std::vector<TracePoint> points;
   points.reserve(static_cast<std::size_t>(scan_count) * 12);
 
@@ -1128,7 +1207,7 @@ std::vector<Rage::ScanHit> Rage::ScanPlayer(
 
     if (config.pointscale > 0.0f) {
       const auto mps = this->GenerateMultipoints(
-          *hb, center, rotation, config.pointscale, eye, inaccuracy);
+          *hb, center, rotation, config.pointscale, shoot_origin, inaccuracy);
 
       for (const auto& mp : mps) {
         const auto duplicate = std::any_of(
@@ -1137,6 +1216,10 @@ std::vector<Rage::ScanHit> Rage::ScanPlayer(
                      (point.position - mp).LengthSqr() < 0.01f;
             });
         if (duplicate) {
+          continue;
+        }
+
+        if (!in_lens(*hb, mp)) {
           continue;
         }
 
@@ -1172,7 +1255,7 @@ std::vector<Rage::ScanHit> Rage::ScanPlayer(
       continue;
     }
 
-    const auto aim = math::helpers::CalculateAngle(eye, tp.position);
+    const auto aim = math::helpers::CalculateAngle(shoot_origin, tp.position);
     const auto fov = math::helpers::AngleDistance(ctx.view_angles, aim);
 
     if (fov > config.max_fov) {
@@ -1181,8 +1264,8 @@ std::vector<Rage::ScanHit> Rage::ScanPlayer(
 
     if (tp.hitbox_index == 0) ++cand.head_scan.traces;
     Shared::Penetration::Result pen{};
-    if (!g_shared.Pen().Run(eye, tp.position, pen_ctx, local.pawn, local.team,
-                            pen)) {
+    if (!g_shared.Pen().Run(shoot_origin, tp.position, pen_ctx, local.pawn,
+                            local.team, pen)) {
       continue;
     }
 
@@ -1242,6 +1325,12 @@ std::vector<Rage::ScanHit> Rage::ScanPlayer(
     h.record = record;
 
     results.push_back(h);
+
+    if (is_lethal && tp.hitbox_index >= 2 && tp.hitbox_index <= 6) {
+      results.clear();
+      results.push_back(h);
+      return results;
+    }
   }
 
   return results;
@@ -1364,16 +1453,25 @@ Rage::Target Rage::SelectBest(const AimContext& aim_ctx,
       }
 
       const auto& bone = group.record->bones[h.bone_index];
+      const auto eval_eye = g_shared.PredictShotOrigin(
+          h.source_eye.position,
+          systems::g_prediction.Pre().networked_velocity);
       const auto hc = config.no_spread.value
                           ? 1.0f
-                          : g_shared.CalculateHitchance(
-                                h.source_eye.position, h.aim_angle, h.hitbox,
-                                bone, eval_inaccuracy, aim_ctx.spread);
+                          : (g_shared.SpreadChanceAtLeast(
+                                 eval_eye, h.aim_angle, h.hitbox, bone,
+                                 eval_inaccuracy, aim_ctx.spread, needed_hc)
+                                 ? g_shared.CalculateHitchance(
+                                       eval_eye, h.aim_angle, h.hitbox, bone,
+                                       eval_inaccuracy, aim_ctx.spread)
+                                 : 0.0f);
       if (h.hitbox_index == 0)
         max_head_hitchance = std::max(max_head_hitchance, hc);
       const auto hp = static_cast<float>(h.health);
       const auto can_kill = h.damage >= hp;
-      const auto passes_hitchance = config.no_spread.value || hc >= needed_hc;
+      const auto passes_hitchance =
+          config.no_spread.value || hc >= needed_hc ||
+          g_shared.IsMaxAccuracy(eval_inaccuracy, !g_shared.IsDucking());
       auto score = passes_hitchance ? 1000000.0f : 0.0f;
 
       if (can_kill) {
@@ -1445,15 +1543,24 @@ Rage::Target Rage::SelectBest(const AimContext& aim_ctx,
 }
 
 float Rage::EvaluateHitchance(const ScanHit& hit, const AimContext& ctx,
-                              float inaccuracy) const {
+                              float inaccuracy, float min_hitchance) const {
   if (!hit.record || !hit.record->valid || hit.bone_index < 0 ||
       hit.bone_index >= hit.record->bone_count) {
     return 0.0f;
   }
 
-  return g_shared.CalculateHitchance(
-      hit.source_eye.position, hit.aim_angle, hit.hitbox,
-      hit.record->bones[hit.bone_index], inaccuracy, ctx.spread);
+  if (g_shared.SpreadChanceAtLeast(hit.source_eye.position, hit.aim_angle,
+                                   hit.hitbox,
+                                   hit.record->bones[hit.bone_index],
+                                   inaccuracy, ctx.spread, min_hitchance)) {
+    return min_hitchance;
+  }
+
+  if (g_shared.IsMaxAccuracy(inaccuracy, !g_shared.IsDucking())) {
+    return min_hitchance;
+  }
+
+  return 0.0f;
 }
 
 std::vector<Rage::ScanHit> Rage::ScanTaser(
@@ -1740,28 +1847,58 @@ void Rage::FireGun(systems::Input::Usercmd* cmd, const Target& tgt,
   const auto& config =
       settings::g_combat.m_ragebot.GetGroup(shared_ctx.weapon_type);
   const auto aim_punch = g_shared.GetAimPunch(local.pawn);
-  auto aim_angle = config.no_spread.value ? math::helpers::CalculateAngle(
-                                                shoot_eye, tgt.hit.position)
-                                          : tgt.hit.aim_angle;
 
-  if (config.no_spread.value) {
-    auto stamp_tick = tick_base;
-    auto stamp_frac{0.0f};
+  const auto& source_eye = tgt.hit.source_eye;
+  auto stamp_tick = tick_base;
+  auto stamp_frac{0.0f};
+  const auto stamp_valid = !source_eye.is_uninterpolated;
 
-    if (!tgt.hit.source_eye.is_uninterpolated) {
-      auto tick_add = [](int t, float f, int dt, float df) {
-        f += df;
-        auto carry = static_cast<int>(std::floor(f));
-        f -= static_cast<float>(carry);
-        return std::pair{t + dt + carry, f};
-      };
+  if (stamp_valid) {
+    auto dt = source_eye.lerp_ticks_int;
+    auto df = source_eye.lerp_ticks_frac;
 
-      std::tie(stamp_tick, stamp_frac) = tick_add(
-          tgt.hit.source_eye.player_tick, tgt.hit.source_eye.player_frac,
-          tgt.hit.source_eye.lerp_ticks_int,
-          tgt.hit.source_eye.lerp_ticks_frac);
+    if (config.double_precision.value) {
+      const auto dp_ticks =
+          static_cast<float>(std::max(0, config.double_precision_ticks.value));
+      if (dp_ticks > 0.0f) {
+        const auto lerp_total = static_cast<float>(source_eye.lerp_ticks_int) +
+                                source_eye.lerp_ticks_frac;
+        const auto rewound =
+            std::fmaxf(0.0f, lerp_total - std::fminf(lerp_total, dp_ticks));
+        const auto rewound_int = static_cast<int>(std::floorf(rewound));
+        dt = rewound_int;
+        df = rewound - static_cast<float>(rewound_int);
+      }
     }
 
+    const auto tick_add = [](int t, float f, int delta, float delta_frac) {
+      f += delta_frac;
+      const auto carry = static_cast<int>(std::floor(f));
+      f -= static_cast<float>(carry);
+      return std::pair{t + delta + carry, f};
+    };
+
+    std::tie(stamp_tick, stamp_frac) =
+        tick_add(source_eye.player_tick, source_eye.player_frac, dt, df);
+  }
+
+  auto shot_eye = shoot_eye;
+  auto shot_eye_rewound{false};
+  if (stamp_valid && config.double_precision.value) {
+    const auto at_stamp =
+        g_shared.GetShootPositionAtTick(stamp_tick, stamp_frac);
+    if (at_stamp.LengthSqr() > 1.0f) {
+      shot_eye = at_stamp;
+      shot_eye_rewound = true;
+    }
+  }
+
+  auto aim_angle =
+      config.no_spread.value || shot_eye_rewound
+          ? math::helpers::CalculateAngle(shot_eye, tgt.hit.position)
+          : tgt.hit.aim_angle;
+
+  if (config.no_spread.value) {
     const auto corrected = g_shared.FindSpreadCorrection(aim_angle, stamp_tick);
     if (corrected.x == 0.0f && corrected.y == 0.0f && corrected.z == 0.0f) {
       this->m_firing_this_tick_ = false;
@@ -1786,7 +1923,7 @@ void Rage::FireGun(systems::Input::Usercmd* cmd, const Target& tgt,
 
   features::misc::g_impacts.OnBoom(
       tgt.hit.pawn, tgt.hit.hitgroup, tgt.hit.damage, tgt.hitchance,
-      shared_ctx.inaccuracy, shared_ctx.spread, aim_angle, shoot_eye,
+      shared_ctx.inaccuracy, shared_ctx.spread, aim_angle, shot_eye,
       tgt.hit.record->tick, g_shared.Lc().GetSkeleton(*tgt.hit.record),
       was_forced);
   features::esp::player::g_chams.Os().Push(tgt.hit.pawn);
@@ -1811,19 +1948,7 @@ void Rage::FireGun(systems::Input::Usercmd* cmd, const Target& tgt,
     entry->SetRenderTickCount(record_time.tick + 1);
     entry->SetRenderTickFraction(0.0f);
 
-    if (!tgt.hit.source_eye.is_uninterpolated) {
-      auto tick_add = [](int t, float f, int dt, float df) {
-        f += df;
-        auto carry = static_cast<int>(std::floor(f));
-        f -= static_cast<float>(carry);
-        return std::pair{t + dt + carry, f};
-      };
-
-      const auto [stamp_tick, stamp_frac] = tick_add(
-          tgt.hit.source_eye.player_tick, tgt.hit.source_eye.player_frac,
-          tgt.hit.source_eye.lerp_ticks_int,
-          tgt.hit.source_eye.lerp_ticks_frac);
-
+    if (stamp_valid) {
       entry->SetPlayerTickCount(stamp_tick);
       entry->SetPlayerTickFraction(stamp_frac);
     }
@@ -1848,24 +1973,45 @@ void Rage::FireGun(systems::Input::Usercmd* cmd, const Target& tgt,
     }
   }
 
+  auto claim_fire{false};
   if (this->DoubletapHasClaim()) {
-    if (this->DoubletapBuildClaim(tgt.hit.position, tgt.hit.record->tick,
-                                  aim_angle)) {
-      const auto index = cmd->csgo_user_cmd.Attack1StartHistoryIndex();
-      if (index >= 0) {
-        const auto entry = cmd->csgo_user_cmd.MutableInputHistory(index);
-        if (entry) {
-          entry->SetPlayerTickCount(m_dt_claim_tick_);
-          entry->SetPlayerTickFraction(0.0f);
-          if (const auto angles = entry->MutableViewAngles()) {
-            angles->SetX(aim_angle.x - aim_punch.x);
-            angles->SetY(aim_angle.y - aim_punch.y);
-            if (config.no_spread.value) {
-              angles->SetZ(aim_angle.z);
-            }
+    if (this->DoubletapBuildClaim(tgt.hit.position, *tgt.hit.record,
+                                  tgt.hit.record->tick, aim_angle)) {
+      const auto claim_eye =
+          g_shared.GetShootPositionAtTick(m_dt_claim_tick_, m_dt_claim_frac_);
+      if (claim_eye.LengthSqr() > 1.0f) {
+        auto claim_angle =
+            math::helpers::CalculateAngle(claim_eye, tgt.hit.position);
+        if (config.no_spread.value) {
+          const auto corrected =
+              g_shared.FindSpreadCorrection(claim_angle, m_dt_claim_tick_);
+          if (corrected.x != 0.0f || corrected.y != 0.0f ||
+              corrected.z != 0.0f) {
+            claim_angle = corrected;
           }
         }
+
+        for (auto i = 0; i < history_size; ++i) {
+          const auto entry = cmd->csgo_user_cmd.MutableInputHistory(i);
+          if (!entry) {
+            continue;
+          }
+
+          if (const auto angles = entry->MutableViewAngles()) {
+            angles->SetX(claim_angle.x - aim_punch.x);
+            angles->SetY(claim_angle.y - aim_punch.y);
+            if (config.no_spread.value) {
+              angles->SetZ(claim_angle.z);
+            }
+          }
+
+          entry->SetPlayerTickCount(m_dt_claim_tick_);
+          entry->SetPlayerTickFraction(m_dt_claim_frac_);
+        }
+
+        claim_fire = true;
       }
+
       m_dt_state_ = DoubletapState::kIdle;
       m_dt_charge_tick_ = g_shared.Ctx().current_tick;
       m_dt_charged_ = false;
@@ -1878,12 +2024,37 @@ void Rage::FireGun(systems::Input::Usercmd* cmd, const Target& tgt,
     m_dt_state_ = DoubletapState::kRelease;
   }
 
-  cmd->buttons.value |= cstypes::command_buttons::kInAttack;
-  cmd->buttons.value_changed |= cstypes::command_buttons::kInAttack;
-  cmd->buttons.value_scroll |= cstypes::command_buttons::kInAttack;
+  if (claim_fire) {
+    const auto subtick_moves = base->MutableSubtickMoves();
 
-  if (history_size > 0) {
-    cmd->csgo_user_cmd.SetAttack1StartHistoryIndex(history_size - 1);
+    if (const auto press = systems::g_input.AcquireSubtickStep(subtick_moves)) {
+      press->SetButton(cstypes::command_buttons::kInAttack);
+      press->SetPressed(true);
+      press->SetWhen(0.0f);
+      press->SetAnalogForwardDelta(0.0f);
+      press->SetAnalogLeftDelta(0.0f);
+    }
+
+    if (const auto release =
+            systems::g_input.AcquireSubtickStep(subtick_moves)) {
+      release->SetButton(cstypes::command_buttons::kInAttack);
+      release->SetPressed(false);
+      release->SetWhen(1.0f);
+      release->SetAnalogForwardDelta(0.0f);
+      release->SetAnalogLeftDelta(0.0f);
+    }
+
+    cmd->buttons.value &= ~cstypes::command_buttons::kInAttack;
+    cmd->buttons.value_changed |= cstypes::command_buttons::kInAttack;
+    cmd->csgo_user_cmd.SetAttack1StartHistoryIndex(-1);
+  } else {
+    cmd->buttons.value |= cstypes::command_buttons::kInAttack;
+    cmd->buttons.value_changed |= cstypes::command_buttons::kInAttack;
+    cmd->buttons.value_scroll |= cstypes::command_buttons::kInAttack;
+
+    if (history_size > 0) {
+      cmd->csgo_user_cmd.SetAttack1StartHistoryIndex(history_size - 1);
+    }
   }
 
   math::Vector3 forward{};

@@ -1083,18 +1083,16 @@ void Shared::ApplyWeaponSpreadDensity(int item_def_idx, float recoil_index,
   }
 }
 
-const std::array<Shared::SpreadSample, 64>& Shared::HitchanceScatter() {
-  static const std::array<SpreadSample, 64> samples = [] {
-    std::array<SpreadSample, 64> out{};
+const std::array<Shared::SpreadSample, 256>& Shared::HitchanceScatter() {
+  static const std::array<SpreadSample, 256> samples = [] {
+    std::array<SpreadSample, 256> out{};
 
     constexpr auto kTwoPi{6.2831855f};
-    constexpr auto kCount{64};
-    constexpr auto kLastSeed{255};
+    constexpr auto kCount{256};
 
     random::Stream stream{};
     for (auto index = 0; index < kCount; ++index) {
-      const auto seed = 1 + (kLastSeed * index) / kCount;
-      stream.Seed(seed + 1);
+      stream.Seed(index + 1);
 
       const auto inaccuracy_density = stream.Float(0.0f, 1.0f);
       const auto inaccuracy_theta = stream.Float(0.0f, kTwoPi);
@@ -1160,6 +1158,87 @@ math::Vector3 Shared::GetAimPunch(std::uintptr_t local_pawn) const {
   return out;
 }
 
+Shared::SpreadTest Shared::MakeSpreadTest(
+    const math::Vector3& shoot_position, const math::Vector3& aim_angle,
+    const systems::Hitboxes::Entry& hitbox,
+    const systems::Bones::Data& bone) const {
+  SpreadTest test{};
+
+  const auto rotation = bone.rotation;
+  test.capsule_start = rotation.RotateVector(hitbox.mins) + bone.position;
+  test.capsule_end = rotation.RotateVector(hitbox.maxs) + bone.position;
+  test.hitbox = hitbox;
+  test.is_capsule = hitbox.radius > 0.001f;
+  test.shoot_position = shoot_position;
+  test.inverse = rotation;
+  test.inverse.x = -test.inverse.x;
+  test.inverse.y = -test.inverse.y;
+  test.inverse.z = -test.inverse.z;
+  test.box_ray_origin =
+      test.inverse.RotateVector(shoot_position - bone.position);
+
+  math::helpers::AngleVectorsLeft(aim_angle, &test.forward, &test.left,
+                                  &test.up);
+
+  return test;
+}
+
+bool Shared::SpreadSampleHit(const SpreadSample& sample, const SpreadTest& test,
+                             float inaccuracy, float spread) const {
+  auto inaccuracy_density = sample.inaccuracy_density;
+  auto spread_density = sample.spread_density;
+
+  ApplyWeaponSpreadDensity(this->m_ctx_.item_def_idx, this->m_ctx_.recoil_index,
+                           &inaccuracy_density);
+  ApplyWeaponSpreadDensity(this->m_ctx_.item_def_idx, this->m_ctx_.recoil_index,
+                           &spread_density);
+
+  const auto offset_x =
+      sample.cos_inaccuracy * inaccuracy_density * inaccuracy +
+      sample.cos_spread * spread_density * spread;
+  const auto offset_y =
+      sample.sin_inaccuracy * inaccuracy_density * inaccuracy +
+      sample.sin_spread * spread_density * spread;
+
+  const auto direction =
+      test.forward + (test.left * offset_x) + (test.up * offset_y);
+  const auto ray_end = direction.Normalized() * 8192.0f;
+
+  if (test.is_capsule) {
+    auto fraction{1.0f};
+    return this->RayVsCapsule(test.shoot_position, ray_end, test.capsule_start,
+                              test.capsule_end, test.hitbox.radius, fraction);
+  }
+
+  const auto direction_local = test.inverse.RotateVector(ray_end);
+  auto entry{0.0f};
+  auto exit{1.0f};
+
+  const auto intersect_axis = [&](float origin, float delta, float minimum,
+                                  float maximum) {
+    if (std::fabs(delta) < 1.0e-8f) {
+      return origin >= minimum && origin <= maximum;
+    }
+
+    auto first = (minimum - origin) / delta;
+    auto second = (maximum - origin) / delta;
+    if (first > second) {
+      std::swap(first, second);
+    }
+
+    entry = std::max(entry, first);
+    exit = std::min(exit, second);
+    return entry <= exit;
+  };
+
+  return intersect_axis(test.box_ray_origin.x, direction_local.x,
+                        test.hitbox.mins.x, test.hitbox.maxs.x) &&
+         intersect_axis(test.box_ray_origin.y, direction_local.y,
+                        test.hitbox.mins.y, test.hitbox.maxs.y) &&
+         intersect_axis(test.box_ray_origin.z, direction_local.z,
+                        test.hitbox.mins.z, test.hitbox.maxs.z);
+}
+
 float Shared::CalculateHitchance(const math::Vector3& shoot_position,
                                  const math::Vector3& aim_angle,
                                  const systems::Hitboxes::Entry& hitbox,
@@ -1170,87 +1249,77 @@ float Shared::CalculateHitchance(const math::Vector3& shoot_position,
     return 1.0f;
   }
 
-  const auto rotation = bone.rotation;
-  const auto capsule_start = rotation.RotateVector(hitbox.mins) + bone.position;
-  const auto capsule_end = rotation.RotateVector(hitbox.maxs) + bone.position;
-  const auto is_capsule = hitbox.radius > 0.001f;
-  auto inverse_rotation = rotation;
-  inverse_rotation.x = -inverse_rotation.x;
-  inverse_rotation.y = -inverse_rotation.y;
-  inverse_rotation.z = -inverse_rotation.z;
-  const auto box_ray_origin =
-      inverse_rotation.RotateVector(shoot_position - bone.position);
-
-  const auto ray_vs_box = [&](const math::Vector3& ray_direction) {
-    const auto direction = inverse_rotation.RotateVector(ray_direction);
-    auto entry{0.0f};
-    auto exit{1.0f};
-
-    const auto intersect_axis = [&](float origin, float delta, float minimum,
-                                    float maximum) {
-      if (std::fabs(delta) < 1.0e-8f) {
-        return origin >= minimum && origin <= maximum;
-      }
-
-      auto first = (minimum - origin) / delta;
-      auto second = (maximum - origin) / delta;
-      if (first > second) {
-        std::swap(first, second);
-      }
-
-      entry = std::max(entry, first);
-      exit = std::min(exit, second);
-      return entry <= exit;
-    };
-
-    return intersect_axis(box_ray_origin.x, direction.x, hitbox.mins.x,
-                          hitbox.maxs.x) &&
-           intersect_axis(box_ray_origin.y, direction.y, hitbox.mins.y,
-                          hitbox.maxs.y) &&
-           intersect_axis(box_ray_origin.z, direction.z, hitbox.mins.z,
-                          hitbox.maxs.z);
-  };
-
-  math::Vector3 forward{}, left{}, up{};
-  math::helpers::AngleVectorsLeft(aim_angle, &forward, &left, &up);
+  const auto test =
+      this->MakeSpreadTest(shoot_position, aim_angle, hitbox, bone);
 
   auto hits{0};
-
   for (const auto& sample : HitchanceScatter()) {
-    auto inaccuracy_density = sample.inaccuracy_density;
-    auto spread_density = sample.spread_density;
-
-    ApplyWeaponSpreadDensity(this->m_ctx_.item_def_idx,
-                             this->m_ctx_.recoil_index, &inaccuracy_density);
-    ApplyWeaponSpreadDensity(this->m_ctx_.item_def_idx,
-                             this->m_ctx_.recoil_index, &spread_density);
-
-    const auto offset_x =
-        sample.cos_inaccuracy * inaccuracy_density * inaccuracy +
-        sample.cos_spread * spread_density * spread;
-    const auto offset_y =
-        sample.sin_inaccuracy * inaccuracy_density * inaccuracy +
-        sample.sin_spread * spread_density * spread;
-
-    const auto direction = forward + (left * offset_x) + (up * offset_y);
-    const auto ray_end = direction.Normalized() * 8192.0f;
-
-    auto hit{false};
-    if (is_capsule) {
-      auto fraction{1.0f};
-      hit = this->RayVsCapsule(shoot_position, ray_end, capsule_start,
-                               capsule_end, hitbox.radius, fraction);
-    } else {
-      hit = ray_vs_box(ray_end);
-    }
-
-    if (hit) {
+    if (this->SpreadSampleHit(sample, test, inaccuracy, spread)) {
       ++hits;
     }
   }
 
-  constexpr auto kSamples{64};
+  constexpr auto kSamples{256};
   return static_cast<float>(hits) / static_cast<float>(kSamples);
+}
+
+bool Shared::SpreadChanceAtLeast(const math::Vector3& shoot_position,
+                                 const math::Vector3& aim_angle,
+                                 const systems::Hitboxes::Entry& hitbox,
+                                 const systems::Bones::Data& bone,
+                                 float inaccuracy, float spread,
+                                 float required) const {
+  const auto total = spread + inaccuracy;
+  if (total < 0.0001f) {
+    return true;
+  }
+
+  if (required <= 0.0f) {
+    return true;
+  }
+
+  if (required > 1.0f) {
+    return false;
+  }
+
+  const auto test =
+      this->MakeSpreadTest(shoot_position, aim_angle, hitbox, bone);
+  constexpr auto kSampleCount{256};
+  const auto needed =
+      static_cast<int>(std::ceil(required * static_cast<float>(kSampleCount)));
+
+  auto hits{0};
+  auto checked{0};
+
+  for (const auto& sample : HitchanceScatter()) {
+    ++checked;
+    if (this->SpreadSampleHit(sample, test, inaccuracy, spread)) {
+      ++hits;
+      if (hits >= needed) {
+        return true;
+      }
+    }
+
+    const auto remaining = kSampleCount - checked;
+    if (needed - hits > remaining) {
+      return false;
+    }
+  }
+
+  return false;
+}
+
+math::Vector3 Shared::PredictShotOrigin(const math::Vector3& eye,
+                                        const math::Vector3& velocity) const {
+  const auto speed = velocity.Length2d();
+
+  auto ticks_to_unlag = 1.0f;
+  if (this->m_ctx_.weapon_max_speed > 0.0f &&
+      speed > this->m_ctx_.weapon_max_speed) {
+    ticks_to_unlag = 2.0f;
+  }
+
+  return eye + velocity * (cstypes::kTickInterval * ticks_to_unlag);
 }
 
 math::Vector3 Shared::FindSpreadCorrection(const math::Vector3& aim_angle,

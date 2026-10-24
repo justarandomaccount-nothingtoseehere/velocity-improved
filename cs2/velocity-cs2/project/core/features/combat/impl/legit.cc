@@ -637,7 +637,6 @@ void Legit::ApplyTriggerbot(
   }
 
   if (!seed_mode) {
-    const auto& skeleton = hit_record->bones;
     const auto game_scene_node = memory::Read<std::uintptr_t>(
         hit_pawn + SCHEMA("C_BaseEntity", "m_pGameSceneNode"_hash));
     const auto hitbox_set = systems::g_hitboxes.Query(game_scene_node);
@@ -653,13 +652,13 @@ void Legit::ApplyTriggerbot(
 
     if (best_hb && best_hb->bone >= 0 &&
         best_hb->bone < hit_record->bone_count) {
-      const auto hc = g_shared.CalculateHitchance(
-          shoot_position, corrected_angles, *best_hb, skeleton[best_hb->bone],
-          ctx.inaccuracy, ctx.spread);
-
       const auto min_hc =
           static_cast<float>(config.trigger_hitchance.value) / 100.0f;
-      if (hc < min_hc &&
+      const auto passes = g_shared.SpreadChanceAtLeast(
+          shoot_position, corrected_angles, *best_hb,
+          hit_record->bones[best_hb->bone], ctx.inaccuracy, ctx.spread, min_hc);
+
+      if (!passes &&
           !g_shared.IsMaxAccuracy(ctx.inaccuracy, !g_shared.IsDucking())) {
         this->m_trigger_pending_pawn_ = 0;
         return;

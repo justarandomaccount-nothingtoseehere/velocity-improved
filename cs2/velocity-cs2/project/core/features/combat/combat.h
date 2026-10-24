@@ -248,6 +248,14 @@ class Shared {
                                          const systems::Hitboxes::Entry& hitbox,
                                          const systems::Bones::Data& bone,
                                          float inaccuracy, float spread) const;
+  [[nodiscard]] bool SpreadChanceAtLeast(const math::Vector3& shoot_position,
+                                         const math::Vector3& aim_angle,
+                                         const systems::Hitboxes::Entry& hitbox,
+                                         const systems::Bones::Data& bone,
+                                         float inaccuracy, float spread,
+                                         float required) const;
+  [[nodiscard]] math::Vector3 PredictShotOrigin(
+      const math::Vector3& eye, const math::Vector3& velocity) const;
   [[nodiscard]] math::Vector3 FindSpreadCorrection(
       const math::Vector3& aim_angle, int tick) const;
   [[nodiscard]] math::Vector3 GetEyePosition(std::uintptr_t local_pawn) const;
@@ -301,9 +309,30 @@ class Shared {
     float cos_spread{};
     float sin_spread{};
   };
-  [[nodiscard]] static const std::array<SpreadSample, 64>& HitchanceScatter();
+
+  struct SpreadTest {
+    math::Vector3 forward{};
+    math::Vector3 left{};
+    math::Vector3 up{};
+    math::Vector3 shoot_position{};
+    math::Vector3 capsule_start{};
+    math::Vector3 capsule_end{};
+    systems::Hitboxes::Entry hitbox{};
+    math::Quaternion inverse{};
+    math::Vector3 box_ray_origin{};
+    bool is_capsule{};
+  };
+
+  [[nodiscard]] static const std::array<SpreadSample, 256>& HitchanceScatter();
   static void ApplyWeaponSpreadDensity(int item_def_idx, float recoil_index,
                                        float* density);
+  [[nodiscard]] bool SpreadSampleHit(const SpreadSample& sample,
+                                     const SpreadTest& test, float inaccuracy,
+                                     float spread) const;
+  [[nodiscard]] SpreadTest MakeSpreadTest(
+      const math::Vector3& shoot_position, const math::Vector3& aim_angle,
+      const systems::Hitboxes::Entry& hitbox,
+      const systems::Bones::Data& bone) const;
 
   Context m_ctx_{};
   Penetration m_pen_{};
@@ -606,8 +635,8 @@ class Rage {
                                   const std::vector<ScanHit>& hits,
                                   float eval_inaccuracy, float needed_hc) const;
   [[nodiscard]] float EvaluateHitchance(const ScanHit& hit,
-                                        const AimContext& ctx,
-                                        float inaccuracy) const;
+                                        const AimContext& ctx, float inaccuracy,
+                                        float min_hitchance) const;
 
   [[nodiscard]] std::vector<ScanHit> ScanTaser(
       const math::Vector3& eye, const AimContext& ctx,
@@ -657,6 +686,7 @@ class Rage {
   }
   [[nodiscard]] int DoubletapCycleTicks() const;
   [[nodiscard]] bool DoubletapBuildClaim(const math::Vector3& hit_position,
+                                         const Shared::Lagcomp::Record& record,
                                          int record_tick,
                                          math::Vector3& out_angle);
 
@@ -695,6 +725,7 @@ class Rage {
   DoubletapState m_dt_state_{DoubletapState::kIdle};
   int m_dt_charge_tick_{-1};
   int m_dt_claim_tick_{};
+  float m_dt_claim_frac_{};
   bool m_dt_charged_{};
 };
 
