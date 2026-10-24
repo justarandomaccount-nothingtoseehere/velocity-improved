@@ -321,7 +321,7 @@ class Misc {
     [[nodiscard]] float GetPitch(float view_pitch);
     [[nodiscard]] float GetYaw(const math::Vector3& view_angles,
                                const systems::Local::Snapshot& local);
-    [[nodiscard]] std::optional<float> MeasureHeadYawOffset(
+    [[nodiscard]] std::optional<float> MeasureEnemyRayYawOffset(
         const systems::Local::Snapshot& local) const;
     void CorrectMovement(systems::Input::Usercmd* cmd);
     void CorrectMovementReprojection(systems::Input::Usercmd* cmd);

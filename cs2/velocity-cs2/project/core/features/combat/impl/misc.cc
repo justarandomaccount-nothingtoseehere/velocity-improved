@@ -120,7 +120,7 @@ void Misc::Antiaim::OnRender(xdraw::draw_list& draw_list) const {
           rendering::g_fonts.smallest_pixel7[rendering::Fonts::Size::kNormal]);
 
       const auto text =
-          std::format("head yaw offset {:.1f}", this->m_head_offset_);
+          std::format("ray yaw offset {:.1f}", this->m_head_offset_);
       const auto [text_w, text_h] = xdraw::measure_text(text);
 
       draw_list.text(feet.x - text_w * 0.5f, feet.y + 30.0f, text,
@@ -242,40 +242,123 @@ float Misc::Antiaim::GetPitch(float view_pitch) {
   }
 }
 
-std::optional<float> Misc::Antiaim::MeasureHeadYawOffset(
+std::optional<float> Misc::Antiaim::MeasureEnemyRayYawOffset(
     const systems::Local::Snapshot& local) const {
   if (!local.pawn) {
     return std::nullopt;
   }
 
+  const auto local_game_scene_node = memory::Read<std::uintptr_t>(
+      local.pawn + SCHEMA("C_BaseEntity", "m_pGameSceneNode"_hash));
+  if (!local_game_scene_node) {
+    return std::nullopt;
+  }
+
+  const auto local_origin = memory::Read<math::Vector3>(
+      local_game_scene_node + SCHEMA("CGameSceneNode", "m_vecAbsOrigin"_hash));
+
   const auto head_bone =
       systems::g_bones.Get(local.pawn, cstypes::bone_ids::kHead);
-  const auto pelvis_bone =
-      systems::g_bones.Get(local.pawn, cstypes::bone_ids::kPelvis);
+  const auto neck_bone =
+      systems::g_bones.Get(local.pawn, cstypes::bone_ids::kNeck);
   if (head_bone.position.LengthSqr() < 1.0f ||
-      pelvis_bone.position.LengthSqr() < 1.0f) {
+      neck_bone.position.LengthSqr() < 1.0f) {
     return std::nullopt;
   }
 
-  const auto head_forward =
-      head_bone.rotation.RotateVector(math::Vector3{0.0f, 1.0f, 0.0f});
-  const auto pelvis_forward =
-      pelvis_bone.rotation.RotateVector(math::Vector3{0.0f, 1.0f, 0.0f});
+  const math::Vector2 head_horizontal{head_bone.position.x - local_origin.x,
+                                      head_bone.position.y - local_origin.y};
+  const math::Vector2 neck_horizontal{neck_bone.position.x - local_origin.x,
+                                      neck_bone.position.y - local_origin.y};
 
-  const math::Vector2 head_horizontal{head_forward.x, head_forward.y};
-  const math::Vector2 pelvis_horizontal{pelvis_forward.x, pelvis_forward.y};
-  if (head_horizontal.LengthSqr() < 1.0e-8f ||
-      pelvis_horizontal.LengthSqr() < 1.0e-8f) {
+  const auto body = (head_horizontal + neck_horizontal) * 0.5f;
+  if (body.LengthSqr() < 1.0e-6f) {
     return std::nullopt;
   }
 
-  const auto head_yaw = std::atan2f(head_horizontal.y, head_horizontal.x) *
-                        (180.0f / std::numbers::pi_v<float>);
-  const auto pelvis_yaw =
-      std::atan2f(pelvis_horizontal.y, pelvis_horizontal.x) *
-      (180.0f / std::numbers::pi_v<float>);
+  const auto players =
+      systems::g_entities.GetByType(systems::Entities::Type::kPlayer);
 
-  return math::helpers::NormalizeYaw(pelvis_yaw - head_yaw);
+  auto best_dist_sq = std::numeric_limits<float>::max();
+  auto best_pawn{std::uintptr_t{0}};
+  auto enemy_found{false};
+
+  for (const auto& p : players) {
+    if (!p.ptr || p.ptr == local.controller) {
+      continue;
+    }
+
+    if (!memory::Read<bool>(
+            p.ptr + SCHEMA("CCSPlayerController", "m_bPawnIsAlive"_hash))) {
+      continue;
+    }
+
+    const auto pawn_handle = memory::Read<std::uint32_t>(
+        p.ptr + SCHEMA("CBasePlayerController", "m_hPawn"_hash));
+    const auto pawn = systems::g_entities.Lookup(pawn_handle);
+
+    if (!pawn || pawn == local.pawn) {
+      continue;
+    }
+
+    const auto team =
+        memory::Read<int>(pawn + SCHEMA("C_BaseEntity", "m_iTeamNum"_hash));
+    if (!local.IsThisOtherTeam(team)) {
+      continue;
+    }
+
+    const auto health =
+        memory::Read<int>(pawn + SCHEMA("C_BaseEntity", "m_iHealth"_hash));
+    if (health <= 0) {
+      continue;
+    }
+
+    const auto enemy_game_scene_node = memory::Read<std::uintptr_t>(
+        pawn + SCHEMA("C_BaseEntity", "m_pGameSceneNode"_hash));
+    if (!enemy_game_scene_node) {
+      continue;
+    }
+
+    const auto enemy_origin = memory::Read<math::Vector3>(
+        enemy_game_scene_node +
+        SCHEMA("CGameSceneNode", "m_vecAbsOrigin"_hash));
+    const auto dx = enemy_origin.x - local_origin.x;
+    const auto dy = enemy_origin.y - local_origin.y;
+    const auto dist_sq = dx * dx + dy * dy;
+
+    if (dist_sq < best_dist_sq) {
+      best_dist_sq = dist_sq;
+      best_pawn = pawn;
+      enemy_found = true;
+    }
+  }
+
+  if (!enemy_found) {
+    return std::nullopt;
+  }
+
+  const auto enemy_scene = memory::Read<std::uintptr_t>(
+      best_pawn + SCHEMA("C_BaseEntity", "m_pGameSceneNode"_hash));
+  const auto enemy_abs = memory::Read<math::Vector3>(
+      enemy_scene + SCHEMA("CGameSceneNode", "m_vecAbsOrigin"_hash));
+  const auto enemy_eye =
+      enemy_abs +
+      memory::Read<math::Vector3>(
+          best_pawn + SCHEMA("C_BaseModelEntity", "m_vecViewOffset"_hash));
+
+  const auto toward_enemy =
+      math::Vector2{enemy_eye.x - local_origin.x, enemy_eye.y - local_origin.y};
+  if (toward_enemy.LengthSqr() < 1.0e-6f) {
+    return std::nullopt;
+  }
+
+  static constexpr auto kRadToDeg{180.0f / std::numbers::pi_v<float>};
+
+  const auto target_yaw =
+      std::atan2f(toward_enemy.y, toward_enemy.x) * kRadToDeg;
+  const auto body_yaw = std::atan2f(body.y, body.x) * kRadToDeg;
+
+  return math::helpers::NormalizeYaw(target_yaw - body_yaw);
 }
 
 float Misc::Antiaim::GetYaw(const math::Vector3& view_angles,
@@ -491,10 +574,10 @@ float Misc::Antiaim::GetYaw(const math::Vector3& view_angles,
 
   this->m_head_offset_ = 0.0f;
 
-  if (const auto head_offset = this->MeasureHeadYawOffset(local)) {
+  if (const auto ray_offset = this->MeasureEnemyRayYawOffset(local)) {
     const auto slash =
         std::max(settings::g_combat.m_antiaim.head_offset_slash.value, 1);
-    const auto correction = std::abs(*head_offset) / static_cast<float>(slash);
+    const auto correction = *ray_offset / static_cast<float>(slash);
 
     this->m_head_offset_ = correction;
 
