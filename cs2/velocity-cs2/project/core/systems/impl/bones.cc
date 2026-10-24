@@ -74,6 +74,10 @@ std::array<Bones::Data, 27> Bones::GetSkeleton(std::uintptr_t entity) {
 }
 
 std::uintptr_t Bones::GetBoneCache(std::uintptr_t entity, int* out_count) {
+  if (!entity) {
+    return 0;
+  }
+
   const auto game_scene_node = memory::Read<std::uintptr_t>(
       entity + SCHEMA("C_BaseEntity", "m_pGameSceneNode"_hash));
   if (!game_scene_node) {

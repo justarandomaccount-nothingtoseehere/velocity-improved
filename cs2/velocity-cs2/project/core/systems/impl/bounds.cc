@@ -9,6 +9,10 @@
 namespace systems {
 
 Bounds::Data Bounds::Get(std::uintptr_t entity) {
+  if (!entity) {
+    return {};
+  }
+
   const auto collision = memory::Read<std::uintptr_t>(
       entity + SCHEMA("C_BaseEntity", "m_pCollision"_hash));
   const auto game_scene_node = memory::Read<std::uintptr_t>(

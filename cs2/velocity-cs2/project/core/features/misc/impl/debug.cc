@@ -15,7 +15,7 @@ void Debug::OnRender(xdraw::draw_list& draw_list) {
   }
 
   const auto local = systems::g_local.Get();
-  if (!local.IsValid() || !systems::g_view.HasCamera()) {
+  if (!local.IsValid() || !local.ViewPawn() || !systems::g_view.HasCamera()) {
     return;
   }
 

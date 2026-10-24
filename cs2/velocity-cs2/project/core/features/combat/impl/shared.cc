@@ -1087,6 +1087,10 @@ math::Vector2 Shared::CalculateSpread(int seed, float accuracy, float spread,
 math::Vector3 Shared::GetAimPunch(std::uintptr_t local_pawn) const {
   math::Vector3 out{};
 
+  if (!local_pawn) {
+    return out;
+  }
+
   memory::Call<void>(
       PATTERN(patterns::get_aim_punch),
       memory::Read<std::uintptr_t>(
@@ -1248,8 +1252,16 @@ math::Vector3 Shared::FindSpreadCorrection(const math::Vector3& aim_angle,
 }
 
 math::Vector3 Shared::GetEyePosition(std::uintptr_t local_pawn) const {
+  if (!local_pawn) {
+    return {};
+  }
+
   const auto game_scene_node = memory::Read<std::uintptr_t>(
       local_pawn + SCHEMA("C_BaseEntity", "m_pGameSceneNode"_hash));
+  if (!game_scene_node) {
+    return {};
+  }
+
   const auto origin = memory::Read<math::Vector3>(
       game_scene_node + SCHEMA("CGameSceneNode", "m_vecAbsOrigin"_hash));
   const auto view_offset = memory::Read<math::Vector3>(
