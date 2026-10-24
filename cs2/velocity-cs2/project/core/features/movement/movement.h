@@ -23,6 +23,7 @@ class Bhop {
  private:
   bool m_landing_jump_this_tick_{false};
   float m_landing_fraction_{1.0f};
+  bool m_missed_landing_last_tick_{false};
 };
 
 class Airstrafe {

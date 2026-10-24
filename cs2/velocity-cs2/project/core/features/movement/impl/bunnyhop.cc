@@ -90,6 +90,11 @@ void ApplyLandingJump(proto::BaseUsercmdPb* base, float when) {
   }
 }
 
+void PressJump(systems::Input::Usercmd* cmd) {
+  cmd->buttons.value |= cstypes::command_buttons::kInJump;
+  cmd->buttons.value_changed |= cstypes::command_buttons::kInJump;
+}
+
 }  // namespace
 
 void Bhop::OnCreateMove(systems::Input::Usercmd* cmd) {
@@ -104,7 +109,10 @@ void Bhop::OnCreateMove(systems::Input::Usercmd* cmd) {
     return;
   }
 
-  if (!(cmd->buttons.value & cstypes::command_buttons::kInJump)) {
+  const bool holding_jump =
+      (cmd->buttons.value & cstypes::command_buttons::kInJump) != 0;
+  if (!holding_jump) {
+    this->m_missed_landing_last_tick_ = false;
     return;
   }
 
@@ -125,7 +133,13 @@ void Bhop::OnCreateMove(systems::Input::Usercmd* cmd) {
   }
 
   const auto& prestate = systems::g_prediction.Pre();
-  if (prestate.flags & cstypes::entity_flags::kOnGround) {
+  const bool on_ground = prestate.flags & cstypes::entity_flags::kOnGround;
+
+  if (on_ground) {
+    if (this->m_missed_landing_last_tick_) {
+      this->m_missed_landing_last_tick_ = false;
+    }
+    PressJump(cmd);
     return;
   }
 
@@ -153,6 +167,7 @@ void Bhop::OnCreateMove(systems::Input::Usercmd* cmd) {
   ApplyLandingJump(base, *landing);
   this->m_landing_jump_this_tick_ = true;
   this->m_landing_fraction_ = *landing;
+  this->m_missed_landing_last_tick_ = true;
 }
 
 }  // namespace features::movement
