@@ -61,6 +61,7 @@ namespace features {
 		inline agents g_agents{};
 		inline gloves g_gloves{};
 		inline guns g_guns{};
+		inline inventory g_inventory{};
 		inline knives g_knives{};
 	}
 }

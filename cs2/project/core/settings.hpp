@@ -1070,6 +1070,25 @@ struct changer
 	};
 	skin_map_field skins{ };
 	agent_selection_field agents{ };
+	struct inventory_settings
+	{
+		xui::setting enabled{ false, { }, "inventory changer", "inventory" };
+		xui::setting replace{ true, { }, "replace inventory", "inventory" };
+		xui::setting configured{ true, { }, "configured skins", "inventory" };
+		xui::setting music_kits{ true, { }, "music kits", "inventory" };
+		xui::setting collectibles{ true, { }, "medals and pins", "inventory" };
+		xui::setting stickers{ true, { }, "stickers", "inventory" };
+		xui::setting patches{ true, { }, "patches", "inventory" };
+		xui::setting graffiti{ true, { }, "graffiti", "inventory" };
+		xui::setting cases{ true, { }, "cases", "inventory" };
+		xui::setting keys{ true, { }, "keys", "inventory" };
+		xui::setting tools{ true, { }, "tools", "inventory" };
+		xui::setting charms{ true, { }, "charms", "inventory" };
+		xui::setting all_guns{ false, { }, "all weapons", "inventory" };
+		xui::setting all_knives{ false, { }, "all knives", "inventory" };
+		xui::setting all_gloves{ false, { }, "all gloves", "inventory" };
+		xui::setting all_agents{ false, { }, "all agents", "inventory" };
+	} m_inventory{ };
 	changer( )
 	{
 		config::detail::register_field( { .key = config::detail::make_key( "changer", "applied skins" ),

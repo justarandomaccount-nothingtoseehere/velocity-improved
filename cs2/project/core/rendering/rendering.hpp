@@ -104,7 +104,7 @@ static constexpr float k_subtab_icon_scale{ 0.55f };
             { { "pistol", "smg", "rifle", "shotgun", "sniper", "lmg" }, 6 },
             { { "enemies", "allies", "local" },                         3 },
             { { "esp", "scene", "weather" },                            3 },
-            { { "guns", "knives", "gloves", "agents" },                 4 },
+            { { "guns", "knives", "gloves", "agents", "inventory" },    5 },
             { { "main", "removals", "camera", "hud" },                  4 },
             { { "general" },                                            1 }
         };

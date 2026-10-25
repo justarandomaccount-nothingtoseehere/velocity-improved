@@ -977,6 +977,31 @@ namespace rendering {
 			const auto card_h = std::floor( card_w * ( detail::k_card_h_ref / detail::k_card_w_ref ) );
 			const auto grid_w = card_w * detail::k_columns + total_gap;
 			const auto offset_x = std::max( 0.0f, ( inner_w - grid_w ) * 0.5f );
+			if ( this->m_subtab == 4 )
+			{
+				auto& inv = settings::g_changer.m_inventory;
+				xui::checkbox( "enabled", inv.enabled );
+				if ( inv.enabled.value )
+				{
+					xui::checkbox( "replace inventory", inv.replace );
+					xui::checkbox( "configured skins", inv.configured );
+					xui::checkbox( "music kits", inv.music_kits );
+					xui::checkbox( "medals and pins", inv.collectibles );
+					xui::checkbox( "stickers", inv.stickers );
+					xui::checkbox( "patches", inv.patches );
+					xui::checkbox( "graffiti", inv.graffiti );
+					xui::checkbox( "cases", inv.cases );
+					xui::checkbox( "keys", inv.keys );
+					xui::checkbox( "tools", inv.tools );
+					xui::checkbox( "charms", inv.charms );
+					xui::checkbox( "all weapons", inv.all_guns );
+					xui::checkbox( "all knives", inv.all_knives );
+					xui::checkbox( "all gloves", inv.all_gloves );
+					xui::checkbox( "all agents", inv.all_agents );
+				}
+				xui::end_child( );
+				return;
+			}
 			if ( this->m_subtab == 3 )
 			{
 				const auto base_x = win->bounds.x + s.window_pad_x + offset_x;

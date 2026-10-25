@@ -42,6 +42,8 @@ namespace addresses::globals {
 		frame_input_ring_idx   = PATTERN (patterns::frame_input_ring_idx);
 		frame_input_ring_base  = PATTERN (patterns::frame_input_ring_base);
 		prediction_state       = PATTERN (patterns::prediction_state);
+		inventory_manager       = PATTERN (patterns::inventory_manager);
+		inventory_category_tree = PATTERN (patterns::inventory_category_tree);
 		if (const auto ptr = MODULE_EXPORT("tier0.dll:g_pMemAlloc"))
 			mem_alloc = *reinterpret_cast<std::uintptr_t*>(ptr);
 		const std::pair<std::string_view, std::uintptr_t> required_globals[] {

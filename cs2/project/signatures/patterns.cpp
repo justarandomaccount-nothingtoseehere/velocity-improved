@@ -3,6 +3,7 @@ namespace patterns {
 	const signatures::signature_t& add_entity = SIGNATURE("client.dll", "48 8D 05 ? ? ? ? 48 89 07 33 D2 40 88 B7 28 21 00 00", signatures::resolve_op::rip_relative, 3, 120, true);
 	const signatures::signature_t& button_state_alloc = SIGNATURE("client.dll", "48 8B 54 CA 08 8D 41 01 89 47 08 EB 16 48 8B 0F E8 ? ? ? ? 48 8B D0 48 8B CF", signatures::resolve_op::rel_call, 16, -128, false);
 	const signatures::signature_t& cmd_interpreter = SIGNATURE("rendersystemdx11.dll", "E8 ? ? ? ? 41 83 BD C0 00 00 00 00", signatures::resolve_op::rel_call, 0, 0, false);
+	const signatures::signature_t& create_econ_item_view = SIGNATURE("client.dll", "48 89 5C 24 08 48 89 6C 24 18 48 89 74 24 20 57 41 54 41 55 41 56 41 57 48 83 EC 40 0F B7 FA 4C 8B F9 B9 FD FF 00 00");
 	const signatures::signature_t& create_move = SIGNATURE("client.dll", "FF FF FF FF 48 8D 05 ? ? ? ? 48 89 0D ? ? ? ?", signatures::resolve_op::rip_relative, 7, 40, true);
 	const signatures::signature_t& csgo_input = SIGNATURE("client.dll", "84 C0 74 0C 48 8D 0D ? ? ? ? E8 ? ? ? ?", signatures::resolve_op::rip_relative, 7, 0, false);
 	const signatures::signature_t& draw_flash_effect = SIGNATURE("client.dll", "85 D2 0F 88 ? ? ? ? 48 89 4C 24 ? 55 56");
@@ -16,6 +17,7 @@ namespace patterns {
 	const signatures::signature_t& dynamic_light_time = SIGNATURE("client.dll", "40 53 48 83 EC 20 48 8B D9 85 D2 74 1A 48 8B 05 ? ? ? ? F3 0F 10 48 30");
 	const signatures::signature_t& engine_client_cmd = SIGNATURE("engine2.dll", "48 8B C4 48 89 58 08 48 89 68 10 48 89 70 18 57 41 56 41 57 48 81 EC ? ? ? ? 0F 29 70 D8 41 0F B6 E9");
 	const signatures::signature_t& entity_list = SIGNATURE("client.dll", "48 8B 0D ? ? ? ? 8B FB C1 EB 0E", signatures::resolve_op::rip_relative, 3, 0, false);
+	const signatures::signature_t& equip_item_in_loadout = SIGNATURE("client.dll", "48 89 5C 24 08 48 89 6C 24 18 48 89 74 24 20 89 54 24 10 57 41 54 41 55 41 56 41 57 48 83 EC 70 0F B7 FA 4D 8B E9");
 	const signatures::signature_t& filesystem_close = SIGNATURE("filesystem_stdio.dll", "48 8D 8F 20 FF FF FF 8B D5 E8 ? ? ? ? FF D3", signatures::resolve_op::rel_call, 9, 0, false);
 	const signatures::signature_t& find_hud_element = SIGNATURE("client.dll", "40 53 48 83 EC ? 48 8B 05 ? ? ? ? 48 8B D9 48 85 C0 74 ? 48 89 5C 24");
 	const signatures::signature_t& frame_input_ring_base = SIGNATURE("engine2.dll", "48 8D 05 ? ? ? ? 0F 10 04 C8", signatures::resolve_op::rip_relative, 3, 0, false);
@@ -53,6 +55,11 @@ namespace patterns {
 	const signatures::signature_t& init_particle_path_buffer = SIGNATURE("client.dll", "48 89 5C 24 ? 57 48 83 EC ? 8B 41 ? 48 8D 79");
 	const signatures::signature_t& init_particle_path_buffer_alt = SIGNATURE("client.dll", "48 89 5C 24 ? 57 48 83 EC ? 8B 41 ? 48 8D 79");
 	const signatures::signature_t& is_glowing = SIGNATURE("client.dll", "00 00 48 8B EA 48 8B F9 E8 ? ? ? ? 45 33 F6 84 C0", signatures::resolve_op::rel_call, 8, 0, false);
+	const signatures::signature_t& inventory_add_display_item = SIGNATURE("client.dll", "E8 ? ? ? ? 8B 8D D0 01 00 00 48 8D 54 24 38", signatures::resolve_op::rel_call, 0, 0, false);
+	const signatures::signature_t& inventory_category_tree = SIGNATURE("client.dll", "48 8B 15 ? ? ? ? 48 8B CD", signatures::resolve_op::rip_relative, 3, 0, false);
+	const signatures::signature_t& inventory_find_item_view = SIGNATURE("client.dll", "48 89 5C 24 10 48 89 74 24 18 48 89 7C 24 20 48 89 4C 24 08 55 41 54 41 55 41 56 41 57 48 8B EC 48 83 EC 50 65 48 8B 04");
+	const signatures::signature_t& inventory_manager = SIGNATURE("client.dll", "48 8D 05 ? ? ? ? C3 CC CC CC CC CC CC CC CC 0F B6 81 6B", signatures::resolve_op::rip_relative, 3, 0, false);
+	const signatures::signature_t& inventory_refresh = SIGNATURE("client.dll", "48 8B C4 55 41 55 48 8D 68 A8 48 81 EC 48 01 00 00 80 B9 CF 04 00 00 00 4C 8B E9 0F 85");
 	const signatures::signature_t& item_system = SIGNATURE("client.dll", "48 83 EC 28 48 8B 05 ? ? ? ? 48 85 C0 0F 85 81");
 	const signatures::signature_t& kv3_alloc = SIGNATURE("tier0.dll", "40 53 48 83 EC 30 80 FA 06 0F B6 C2 41 B9 16");
 	const signatures::signature_t& kv3_destroy = SIGNATURE("tier0.dll", "40 57 41 57 48 83 EC 38 4C 8B 01 44 8B FA 49 8B C0 48 8B F9 48 C1 E8 02");

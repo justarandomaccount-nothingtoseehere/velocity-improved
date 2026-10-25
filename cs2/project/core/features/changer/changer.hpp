@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 #include <filesystem>
 #include <fstream>
 #include <core/systems/systems.hpp>
@@ -12,6 +13,15 @@ namespace features::changer {
 			knife,
 			glove,
 			agent,
+			music_kit,
+			collectible,
+			sticker,
+			patch,
+			graffiti,
+			case_,
+			key,
+			tool,
+			charm,
 			other
 		};
 		struct paint_kit
@@ -131,6 +141,37 @@ namespace features::changer {
 		std::mutex m_image_mutex{};
 		std::unordered_map<std::uint16_t, std::ifstream> m_archive_handles{};
 		std::mutex m_vpk_mutex{};
+	};
+	class inventory
+	{
+	public:
+		struct entry
+		{
+			std::uint64_t id{};
+		};
+		struct spec
+		{
+			std::int16_t def_index{};
+			int paint_kit_id{};
+			int seed{};
+			float wear{};
+		};
+		void on_frame_stage_notify( );
+		void on_refresh( std::uintptr_t panel );
+		[[nodiscard]] bool prepare_refresh( std::uintptr_t panel );
+	private:
+		void rebuild( );
+		[[nodiscard]] std::uint64_t ensure_view( const spec& s );
+		[[nodiscard]] bool wants( const econ_item_system::item_def& def ) const;
+		[[nodiscard]] std::uint32_t state_hash( ) const;
+		std::vector<entry> m_views{};
+		std::vector<spec> m_specs{};
+		std::uintptr_t m_manager{};
+		std::uintptr_t m_player_inventory{};
+		std::uint32_t m_state{};
+		std::atomic<bool> m_invalidate{};
+		bool m_enabled{};
+		std::mutex m_mutex{};
 	};
 	class agents
 	{

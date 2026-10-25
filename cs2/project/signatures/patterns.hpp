@@ -5,6 +5,7 @@ namespace patterns {
 	extern const ::signatures::signature_t& add_entity;
 	extern const ::signatures::signature_t& button_state_alloc;
 	extern const ::signatures::signature_t& cmd_interpreter;
+	extern const ::signatures::signature_t& create_econ_item_view;
 	extern const ::signatures::signature_t& create_move;
 	extern const ::signatures::signature_t& csgo_input;
 	extern const ::signatures::signature_t& draw_flash_effect;
@@ -18,6 +19,7 @@ namespace patterns {
 	extern const ::signatures::signature_t& dynamic_light_time;
 	extern const ::signatures::signature_t& engine_client_cmd;
 	extern const ::signatures::signature_t& entity_list;
+	extern const ::signatures::signature_t& equip_item_in_loadout;
 	extern const ::signatures::signature_t& filesystem_close;
 	extern const ::signatures::signature_t& find_hud_element;
 	extern const ::signatures::signature_t& frame_input_ring_base;
@@ -55,6 +57,11 @@ namespace patterns {
 	extern const ::signatures::signature_t& init_particle_path_buffer;
 	extern const ::signatures::signature_t& init_particle_path_buffer_alt;
 	extern const ::signatures::signature_t& is_glowing;
+	extern const ::signatures::signature_t& inventory_add_display_item;
+	extern const ::signatures::signature_t& inventory_category_tree;
+	extern const ::signatures::signature_t& inventory_find_item_view;
+	extern const ::signatures::signature_t& inventory_manager;
+	extern const ::signatures::signature_t& inventory_refresh;
 	extern const ::signatures::signature_t& item_system;
 	extern const ::signatures::signature_t& kv3_alloc;
 	extern const ::signatures::signature_t& kv3_destroy;

@@ -574,6 +574,14 @@ namespace features::changer {
 		{
 			return item_category::knife;
 		}
+		if ( std::strcmp( item_class, "weapon_case_key" ) == 0 )
+		{
+			return item_category::key;
+		}
+		if ( std::strncmp( item_class, "weapon_case", 11 ) == 0 )
+		{
+			return item_category::case_;
+		}
 		if ( std::strncmp( item_class, "weapon_", 7 ) == 0 )
 		{
 			if (
@@ -592,6 +600,38 @@ namespace features::changer {
 				return item_category::other;
 			}
 			return item_category::gun;
+		}
+		if ( std::strcmp( item_class, "music_kit" ) == 0 || std::strcmp( item_class, "musickit" ) == 0 )
+		{
+			return item_category::music_kit;
+		}
+		if ( std::strcmp( item_class, "collectible" ) == 0 )
+		{
+			return item_category::collectible;
+		}
+		if ( std::strcmp( item_class, "sticker" ) == 0 )
+		{
+			return item_category::sticker;
+		}
+		if ( std::strcmp( item_class, "patch" ) == 0 )
+		{
+			return item_category::patch;
+		}
+		if ( std::strcmp( item_class, "spray" ) == 0 || std::strcmp( item_class, "spraypaint" ) == 0 )
+		{
+			return item_category::graffiti;
+		}
+		if ( std::strcmp( item_class, "tool" ) == 0 )
+		{
+			return item_category::tool;
+		}
+		if ( std::strcmp( item_class, "key" ) == 0 )
+		{
+			return item_category::key;
+		}
+		if ( std::strcmp( item_class, "keychain" ) == 0 || std::strcmp( item_class, "charm" ) == 0 )
+		{
+			return item_category::charm;
 		}
 		return item_category::other;
 	}

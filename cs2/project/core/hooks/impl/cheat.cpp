@@ -20,6 +20,7 @@ namespace hooks {
 		const hooking::manager::entry feature_hooks[] {
 			{ &m_cmd_interpreter, &cmd_interpreter, xs ("cmd_interpreter"), PATTERN (patterns::cmd_interpreter) },
 			{ &m_frame_stage_notify, &frame_stage_notify, xs ("frame_stage_notify"), PATTERN (patterns::frame_stage_notify) },
+			{ &m_inventory_refresh, &inventory_refresh, xs ("inventory_refresh"), PATTERN (patterns::inventory_refresh) },
 			{ &m_create_move, &create_move, xs ("create_move"), PATTERN (patterns::create_move) },
 			{ &m_handle_view_angles, &handle_view_angles, xs ("handle_view_angles"), PATTERN (patterns::handle_view_angles) },
 			{ &m_add_entity, &add_entity, xs ("add_entity"), PATTERN (patterns::add_entity) },
@@ -79,6 +80,7 @@ namespace hooks {
 		m_resize_buffers.reset( );
 		m_cmd_interpreter.reset( );
 		m_frame_stage_notify.reset( );
+		m_inventory_refresh.reset( );
 		m_create_move.reset( );
 		m_handle_view_angles.reset( );
 		m_add_entity.reset( );
@@ -188,6 +190,16 @@ namespace hooks {
 	{
 		m_cmd_interpreter.call<void>( render_thread, item, flag );
 	}
+	std::uintptr_t __fastcall cheat::inventory_refresh( std::uintptr_t panel )
+	{
+		const auto rebuild = features::changer::g_inventory.prepare_refresh( panel );
+		const auto result = m_inventory_refresh.call<std::uintptr_t>( panel );
+		if ( rebuild )
+		{
+			features::changer::g_inventory.on_refresh( panel );
+		}
+		return result;
+	}
 	void __fastcall cheat::frame_stage_notify( std::uintptr_t thisptr, int stage )
 	{
 		if ( systems::g_entities.is_empty( ) )
@@ -203,6 +215,7 @@ namespace hooks {
 			}
 			if ( stage == 7 )
 			{
+				features::changer::g_inventory.on_frame_stage_notify( );
 				features::changer::g_agents.on_frame_stage_notify( );
 				features::changer::g_gloves.on_frame_stage_notify( );
 				features::changer::g_knives.on_frame_stage_notify( );

@@ -63,6 +63,8 @@ namespace addresses {
 		inline std::uintptr_t frame_input_ring_idx{};
 		inline std::uintptr_t frame_input_ring_base{};
 		inline std::uintptr_t prediction_state{};
+		inline std::uintptr_t inventory_manager{};
+		inline std::uintptr_t inventory_category_tree{};
 	}
 	namespace functions {
 		bool initialize( );
