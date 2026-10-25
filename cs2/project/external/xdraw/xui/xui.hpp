@@ -313,6 +313,7 @@ namespace xui {
 		void render( const style&, const input_state& ) override;
 		void tick( );
 		void set_content_h( float h );
+		[[nodiscard]] float content_h( ) const noexcept { return this->m_content_h; }
 		[[nodiscard]] float open_anim( ) const;
 		[[nodiscard]] bool closing( ) const;
 		[[nodiscard]] rect get_popup( ) const;
@@ -352,6 +353,7 @@ namespace xui {
 		float content_h{};
 		std::uintptr_t group_id{ null_id };
 		bool scrollable{};
+		bool flush_x{};
 		float scroll_y{};
 	};
 	struct child_scroll_state
@@ -417,7 +419,7 @@ namespace xui {
 	void set_highlight_target( std::string_view label, float duration_seconds = 1.0f );
 	bool begin_window( std::string_view title, float& x, float& y, float& w, float& h, bool resizable = false, float min_w = 200.0f, float min_h = 200.0f, float reveal = 1.0f );
 	void end_window( );
-	bool begin_child( std::string_view title, float w, float h = 0.0f, bool scrollable = false );
+	bool begin_child( std::string_view title, float w, float h = 0.0f, bool scrollable = false, bool flush_x = false );
 	void end_child( );
 	bool begin_popup( std::string_view label, float width = 200.0f );
 	void end_popup( );

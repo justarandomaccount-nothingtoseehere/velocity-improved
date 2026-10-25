@@ -55,6 +55,7 @@ namespace rendering {
 		const auto content_w = this->m_w - tokens::gap * 2.0f - tokens::sidebar_w - tokens::gap;
 		const auto col_w = ( content_w - tokens::gap ) * 0.5f;
 		const auto right_x = content_x + col_w + tokens::gap;
+		const auto body_h = this->m_body_h;
 		const auto subtab = this->m_subtab;
 		xui::layout::set_cursor( content_x - wx, body_y - wy );
 		if ( subtab == 0 )
@@ -65,195 +66,203 @@ namespace rendering {
 			auto& pen = settings::g_combat.m_penetration_crosshair;
 			auto& mov = settings::g_movement;
 			auto& ab = m.m_autobuy;
-			if ( xui::begin_child( "##misc_impacts", col_w ) )
+			if ( xui::begin_child( "##misc_left", col_w, body_h, true, true ) )
 			{
-				xui::checkbox( "hit logs", impacts.hit_log );
-				if ( xui::begin_popup( "##hitlog_popup", 220.0f ) )
+				if ( xui::begin_child( "##misc_impacts", 0.0f ) )
 				{
-					xui::slider_float( "duration##hl", impacts.hit_log_duration, 0.5f, 10.0f, "%.1fs" );
-					xui::end_popup( );
-				}
-				xui::checkbox( "miss logs", impacts.miss_log );
-				if ( xui::begin_popup( "##misslog_popup", 220.0f ) )
-				{
-					xui::slider_float( "duration##ml", impacts.miss_log_duration, 0.5f, 10.0f, "%.1fs" );
-					xui::end_popup( );
-				}
-				xui::checkbox( "hit sound", impacts.hit_sound );
-				if ( xui::begin_popup( "##hitsound_popup", 220.0f ) )
-				{
-					xui::combo( "type##hs", impacts.hit_sound_type.value, detail::sound_types, detail::k_sound_type_count );
-					xui::slider_float( "volume##hs", impacts.hit_sound_volume, 1.0f, 100.0f, "%.0f%%" );
-					if ( impacts.hit_sound_type.value == settings::misc::impacts::sound_type::custom )
+					xui::checkbox( "hit logs", impacts.hit_log );
+					if ( xui::begin_popup( "##hitlog_popup", 220.0f ) )
 					{
-						detail::draw_custom_sound_picker( impacts.custom_hit_sound, "sound##hs", "preview##hs", impacts.hit_sound_volume.value );
+						xui::slider_float( "duration##hl", impacts.hit_log_duration, 0.5f, 10.0f, "%.1fs" );
+						xui::end_popup( );
 					}
-					xui::end_popup( );
-				}
-				xui::checkbox( "hit marker", impacts.hit_marker );
-				if ( xui::begin_popup( "##hitmarker_popup", 220.0f ) )
-				{
-					xui::combo( "type##hm", impacts.hit_marker_type.value, detail::marker_types, 3 );
-					xui::slider_float( "duration##hm", impacts.hit_marker_duration, 0.1f, 5.0f, "%.1fs" );
-					xui::color_picker( "color##hm", impacts.hit_marker_color );
-					xui::end_popup( );
-				}
-				xui::checkbox( "hit effect", impacts.hit_effect );
-				if ( xui::begin_popup( "##hitfx_popup", 220.0f ) )
-				{
-					xui::color_picker( "color##hitfx", impacts.hit_effect_color );
-					xui::slider_float( "duration##hitfx", impacts.hit_effect_duration, 0.1f, 5.0f, "%.1fs" );
-					xui::slider_float( "strength##hitfx", impacts.hit_effect_strength, 1.0f, 100.0f, "%.0f%%" );
-					xui::end_popup( );
-				}
-				xui::checkbox( "death sound", impacts.death_sound );
-				if ( xui::begin_popup( "##deathsound_popup", 220.0f ) )
-				{
-					xui::combo( "type##ds", impacts.death_sound_type.value, detail::sound_types, detail::k_sound_type_count );
-					xui::slider_float( "volume##ds", impacts.death_sound_volume, 1.0f, 100.0f, "%.0f%%" );
-					if ( impacts.death_sound_type.value == settings::misc::impacts::sound_type::custom )
+					xui::checkbox( "miss logs", impacts.miss_log );
+					if ( xui::begin_popup( "##misslog_popup", 220.0f ) )
 					{
-						detail::draw_custom_sound_picker( impacts.custom_death_sound, "sound##ds", "preview##ds", impacts.death_sound_volume.value );
+						xui::slider_float( "duration##ml", impacts.miss_log_duration, 0.5f, 10.0f, "%.1fs" );
+						xui::end_popup( );
 					}
-					xui::end_popup( );
-				}
-				xui::checkbox( "death effect", impacts.death_effect );
-				if ( xui::begin_popup( "##deathfx_popup", 220.0f ) )
-				{
-					xui::color_picker( "color##deathfx", impacts.death_effect_color );
-					xui::end_popup( );
-				}
-				xui::checkbox ("scoreboard weapons", m.m_scoreboard_weapons.enabled);
-				if (xui::begin_popup ("##scoreboardeq_popup", 220.0f)) {
-					xui::color_picker ("color##scoreboardeq", m.m_scoreboard_weapons.color);
-					xui::end_popup ();
-				}
-				xui::checkbox( "bullet impacts", impacts.bullet_impact_effect );
-				if ( xui::begin_popup( "##bulletfx_popup", 220.0f ) )
-				{
-					xui::combo( "type##bulletfx", impacts.bullet_impact_effect_type.value, detail::impact_types, 3 );
-					const auto type = impacts.bullet_impact_effect_type.value;
-					const auto show_overlay = type == settings::misc::impacts::bullet_impact_type::overlay || type == settings::misc::impacts::bullet_impact_type::both;
-					const auto show_sparks = type == settings::misc::impacts::bullet_impact_type::sparks || type == settings::misc::impacts::bullet_impact_type::both;
-					if ( show_overlay )
+					xui::checkbox( "hit sound", impacts.hit_sound );
+					if ( xui::begin_popup( "##hitsound_popup", 220.0f ) )
 					{
-						xui::slider_float( "duration##bulletfx", impacts.bullet_impact_effect_duration, 0.1f, 5.0f, "%.1fs" );
-						xui::color_picker( "fill##bulletfx", impacts.bullet_impact_effect_fill_color );
-						xui::color_picker( "edge##bulletfx", impacts.bullet_impact_effect_edge_color );
-						xui::checkbox( "glow##bulletfx", impacts.bullet_impact_effect_glow );
-						if ( impacts.bullet_impact_effect_glow )
+						xui::combo( "type##hs", impacts.hit_sound_type.value, detail::sound_types, detail::k_sound_type_count );
+						xui::slider_float( "volume##hs", impacts.hit_sound_volume, 1.0f, 100.0f, "%.0f%%" );
+						if ( impacts.hit_sound_type.value == settings::misc::impacts::sound_type::custom )
 						{
-							xui::slider_float( "glow strength##bulletfx", impacts.bullet_impact_effect_glow_strength, 0.1f, 1.0f, "%.2f" );
+							detail::draw_custom_sound_picker( impacts.custom_hit_sound, "sound##hs", "preview##hs", impacts.hit_sound_volume.value );
 						}
+						xui::end_popup( );
 					}
-					if ( show_sparks )
+					xui::checkbox( "hit marker", impacts.hit_marker );
+					if ( xui::begin_popup( "##hitmarker_popup", 220.0f ) )
 					{
-						xui::color_picker( "spark##bulletfx", impacts.bullet_impact_effect_color_spark );
+						xui::combo( "type##hm", impacts.hit_marker_type.value, detail::marker_types, 3 );
+						xui::slider_float( "duration##hm", impacts.hit_marker_duration, 0.1f, 5.0f, "%.1fs" );
+						xui::color_picker( "color##hm", impacts.hit_marker_color );
+						xui::end_popup( );
 					}
-					xui::end_popup( );
+					xui::checkbox( "hit effect", impacts.hit_effect );
+					if ( xui::begin_popup( "##hitfx_popup", 220.0f ) )
+					{
+						xui::color_picker( "color##hitfx", impacts.hit_effect_color );
+						xui::slider_float( "duration##hitfx", impacts.hit_effect_duration, 0.1f, 5.0f, "%.1fs" );
+						xui::slider_float( "strength##hitfx", impacts.hit_effect_strength, 1.0f, 100.0f, "%.0f%%" );
+						xui::end_popup( );
+					}
+					xui::checkbox( "death sound", impacts.death_sound );
+					if ( xui::begin_popup( "##deathsound_popup", 220.0f ) )
+					{
+						xui::combo( "type##ds", impacts.death_sound_type.value, detail::sound_types, detail::k_sound_type_count );
+						xui::slider_float( "volume##ds", impacts.death_sound_volume, 1.0f, 100.0f, "%.0f%%" );
+						if ( impacts.death_sound_type.value == settings::misc::impacts::sound_type::custom )
+						{
+							detail::draw_custom_sound_picker( impacts.custom_death_sound, "sound##ds", "preview##ds", impacts.death_sound_volume.value );
+						}
+						xui::end_popup( );
+					}
+					xui::checkbox( "death effect", impacts.death_effect );
+					if ( xui::begin_popup( "##deathfx_popup", 220.0f ) )
+					{
+						xui::color_picker( "color##deathfx", impacts.death_effect_color );
+						xui::end_popup( );
+					}
+					xui::checkbox ("scoreboard weapons", m.m_scoreboard_weapons.enabled);
+					if (xui::begin_popup ("##scoreboardeq_popup", 220.0f)) {
+						xui::color_picker ("color##scoreboardeq", m.m_scoreboard_weapons.color);
+						xui::end_popup ();
+					}
+					xui::checkbox( "bullet impacts", impacts.bullet_impact_effect );
+					if ( xui::begin_popup( "##bulletfx_popup", 220.0f ) )
+					{
+						xui::combo( "type##bulletfx", impacts.bullet_impact_effect_type.value, detail::impact_types, 3 );
+						const auto type = impacts.bullet_impact_effect_type.value;
+						const auto show_overlay = type == settings::misc::impacts::bullet_impact_type::overlay || type == settings::misc::impacts::bullet_impact_type::both;
+						const auto show_sparks = type == settings::misc::impacts::bullet_impact_type::sparks || type == settings::misc::impacts::bullet_impact_type::both;
+						if ( show_overlay )
+						{
+							xui::slider_float( "duration##bulletfx", impacts.bullet_impact_effect_duration, 0.1f, 5.0f, "%.1fs" );
+							xui::color_picker( "fill##bulletfx", impacts.bullet_impact_effect_fill_color );
+							xui::color_picker( "edge##bulletfx", impacts.bullet_impact_effect_edge_color );
+							xui::checkbox( "glow##bulletfx", impacts.bullet_impact_effect_glow );
+							if ( impacts.bullet_impact_effect_glow )
+							{
+								xui::slider_float( "glow strength##bulletfx", impacts.bullet_impact_effect_glow_strength, 0.1f, 1.0f, "%.2f" );
+							}
+						}
+						if ( show_sparks )
+						{
+							xui::color_picker( "spark##bulletfx", impacts.bullet_impact_effect_color_spark );
+						}
+						xui::end_popup( );
+					}
+					xui::checkbox( "bullet tracers", impacts.bullet_tracers );
+					if ( xui::begin_popup( "##tracers_popup", 220.0f ) )
+					{
+						xui::slider_float( "duration##tracer", impacts.bullet_tracer_duration, 0.1f, 5.0f, "%.1fs" );
+						xui::color_picker( "color##tracer", impacts.bullet_tracer_color );
+						xui::end_popup( );
+					}
+					xui::end_child( );
 				}
-				xui::checkbox( "bullet tracers", impacts.bullet_tracers );
-				if ( xui::begin_popup( "##tracers_popup", 220.0f ) )
+				if ( xui::begin_child( "##misc_visuals", 0.0f ) )
 				{
-					xui::slider_float( "duration##tracer", impacts.bullet_tracer_duration, 0.1f, 5.0f, "%.1fs" );
-					xui::color_picker( "color##tracer", impacts.bullet_tracer_color );
-					xui::end_popup( );
-				}
-				xui::end_child( );
-			}
-			if ( xui::begin_child( "##misc_visuals", col_w ) )
-			{
-				xui::checkbox( "projectile trajectory", traj.enabled );
-				if ( xui::begin_popup( "##traj_popup", 220.0f ) )
-				{
-					xui::checkbox( "straight throw", traj.straight_throw );
-					xui::color_picker( "held color", traj.held_color );
-					xui::color_picker( "thrown color", traj.thrown_color );
-					xui::color_picker( "will damage held color", traj.will_deal_damage_held_color );
-					xui::color_picker( "will damage thrown color", traj.will_deal_damage_thrown_color );
-					xui::end_popup( );
-				}
-				xui::checkbox( "dynamic light", dlights.enabled );
-				if ( xui::begin_popup( "##dlight_popup", 220.0f ) )
-				{
-					xui::color_picker( "color##dl", dlights.color );
-					xui::slider_float( "radius##dl", dlights.radius, 50.0f, 15000.0f, "%.0f" );
-					xui::slider_float( "z offset##dl", dlights.z_offset, 0.0f, 100.0f, "%.0f" );
-					xui::end_popup( );
-				}
-				xui::checkbox( "penetration crosshair", pen.enabled );
-				if ( xui::begin_popup( "##pen_popup", 220.0f ) )
-				{
-					xui::checkbox( "glow##pen", pen.glow );
-					xui::slider_float( "glow strength##pen", pen.glow_strength, 0.1f, 1.0f, "%.2f" );
-					xui::color_picker( "can penetrate##pen", pen.can_penetrate_fill );
-					xui::color_picker( "can pen outline##pen", pen.can_penetrate_outline );
-					xui::color_picker( "blocked##pen", pen.blocked_fill );
-					xui::color_picker( "blocked outline##pen", pen.blocked_outline );
-					xui::end_popup( );
+					xui::checkbox( "projectile trajectory", traj.enabled );
+					if ( xui::begin_popup( "##traj_popup", 220.0f ) )
+					{
+						xui::checkbox( "straight throw", traj.straight_throw );
+						xui::color_picker( "held color", traj.held_color );
+						xui::color_picker( "thrown color", traj.thrown_color );
+						xui::color_picker( "will damage held color", traj.will_deal_damage_held_color );
+						xui::color_picker( "will damage thrown color", traj.will_deal_damage_thrown_color );
+						xui::end_popup( );
+					}
+					xui::checkbox( "dynamic light", dlights.enabled );
+					if ( xui::begin_popup( "##dlight_popup", 220.0f ) )
+					{
+						xui::color_picker( "color##dl", dlights.color );
+						xui::slider_float( "radius##dl", dlights.radius, 50.0f, 15000.0f, "%.0f" );
+						xui::slider_float( "z offset##dl", dlights.z_offset, 0.0f, 100.0f, "%.0f" );
+						xui::end_popup( );
+					}
+					xui::checkbox( "penetration crosshair", pen.enabled );
+					if ( xui::begin_popup( "##pen_popup", 220.0f ) )
+					{
+						xui::checkbox( "glow##pen", pen.glow );
+						xui::slider_float( "glow strength##pen", pen.glow_strength, 0.1f, 1.0f, "%.2f" );
+						xui::color_picker( "can penetrate##pen", pen.can_penetrate_fill );
+						xui::color_picker( "can pen outline##pen", pen.can_penetrate_outline );
+						xui::color_picker( "blocked##pen", pen.blocked_fill );
+						xui::color_picker( "blocked outline##pen", pen.blocked_outline );
+						xui::end_popup( );
+					}
+					xui::end_child( );
 				}
 				xui::end_child( );
 			}
 			xui::layout::set_cursor( right_x - wx, body_y - wy );
-			if ( xui::begin_child( "##misc_movement", col_w ) )
+			if ( xui::begin_child( "##misc_right", col_w, body_h, true, true ) )
 			{
-				xui::checkbox( "bhop", mov.bhop );
-				xui::checkbox( "autostrafe", mov.airstrafe );
-				xui::checkbox( "jumpbug", mov.jumpbug );
-				xui::checkbox( "fastladder", mov.fastladder );
-				xui::checkbox( "edgejump", mov.edgejump );
-				xui::checkbox( "edgestop", mov.edgestop );
-				xui::checkbox( "edgebug", mov.edgebug );
-				if ( xui::begin_popup( "##edgebug_popup", 240.0f ) )
+				if ( xui::begin_child( "##misc_movement", 0.0f ) )
 				{
-					static const char* edgebug_modes[] = { "0: loose", "1: edge trace (default)", "2: no jump held", "3: min speed", "4: strict vz" };
-					xui::combo( "mode##eb", mov.edgebug_mode.value, edgebug_modes, 5 );
-					xui::slider_int( "passes##eb", mov.edgebug_passes, 1, 5, "%d" );
-					xui::checkbox( "jump steps##eb", mov.edgebug_include_jump_steps );
-					xui::end_popup( );
+					xui::checkbox( "bhop", mov.bhop );
+					xui::checkbox( "autostrafe", mov.airstrafe );
+					xui::checkbox( "jumpbug", mov.jumpbug );
+					xui::checkbox( "fastladder", mov.fastladder );
+					xui::checkbox( "edgejump", mov.edgejump );
+					xui::checkbox( "edgestop", mov.edgestop );
+					xui::checkbox( "edgebug", mov.edgebug );
+					if ( xui::begin_popup( "##edgebug_popup", 240.0f ) )
+					{
+						static const char* edgebug_modes[] = { "0: loose", "1: edge trace (default)", "2: no jump held", "3: min speed", "4: strict vz" };
+						xui::combo( "mode##eb", mov.edgebug_mode.value, edgebug_modes, 5 );
+						xui::slider_int( "passes##eb", mov.edgebug_passes, 1, 5, "%d" );
+						xui::checkbox( "jump steps##eb", mov.edgebug_include_jump_steps );
+						xui::end_popup( );
+					}
+					xui::checkbox( "slowwalk", mov.slowwalk );
+					if ( xui::begin_popup( "##slowwalk_popup", 220.0f ) )
+					{
+						xui::slider_float( "speed", mov.slowwalk_speed, 1.0f, 100.0f, "%.2fs" );
+						xui::end_popup( );
+					}
+					xui::end_child( );
 				}
-				xui::checkbox( "slowwalk", mov.slowwalk );
-				if ( xui::begin_popup( "##slowwalk_popup", 220.0f ) )
+				if ( xui::begin_child( "##misc_other", 0.0f ) )
 				{
-					xui::slider_float( "speed", mov.slowwalk_speed, 1.0f, 100.0f, "%.2fs" );
-					xui::end_popup( );
-				}
-				xui::end_child( );
-			}
-			if ( xui::begin_child( "##misc_other", col_w ) )
-			{
-				xui::checkbox( "reveal radar", m.reveal_radar );
-				xui::checkbox( "preserve killfeed", m.preserve_killfeed );
-				xui::checkbox( "disable game logs", m.disable_game_logs );
-				xui::checkbox( "auto buy", ab.enabled );
-				if ( xui::begin_popup( "##autobuy_popup", 220.0f ) )
-				{
-					xui::combo( "primary##ab", ab.primary_weapon, detail::primary_weapons, 6 );
-					xui::combo( "secondary##ab", ab.secondary_weapon, detail::secondary_weapons, 5 );
-					xui::checkbox( "armor##ab", ab.armor );
-					xui::checkbox( "defuser##ab", ab.defuser );
-					xui::checkbox( "taser##ab", ab.taser );
-					xui::multicombo( "grenades##ab", ab.grenades, detail::grenade_names, 5 );
-					xui::end_popup( );
-				}
-				xui::checkbox( "clantag", m.m_name_changer.clantag );
-				xui::checkbox( "override name", m.m_name_changer.override_name );
-				if ( xui::begin_popup( "##override_name_popup", 220.0f ) )
-				{
-					xui::text_input( "name##nc", m.m_name_changer.name.value, 32, "player name..." );
-					xui::end_popup( );
-				}
-				xui::checkbox( "watermark", m.m_watermark.enabled );
-				if ( xui::begin_popup( "##watermark_popup", 200.0f ) )
-				{
-					xui::checkbox( "fps##wm",      m.m_watermark.show_fps );
-					xui::checkbox( "ping##wm",     m.m_watermark.show_ping );
-					xui::checkbox( "time##wm",     m.m_watermark.show_time );
-					xui::checkbox( "user##wm",     m.m_watermark.show_user );
-					xui::checkbox( "map##wm",      m.m_watermark.show_map );
-					xui::checkbox( "tick rate##wm",m.m_watermark.show_tick );
-					xui::checkbox( "velocity##wm", m.m_watermark.show_velocity );
-					xui::end_popup( );
+					xui::checkbox( "reveal radar", m.reveal_radar );
+					xui::checkbox( "preserve killfeed", m.preserve_killfeed );
+					xui::checkbox( "disable game logs", m.disable_game_logs );
+					xui::checkbox( "auto buy", ab.enabled );
+					if ( xui::begin_popup( "##autobuy_popup", 220.0f ) )
+					{
+						xui::combo( "primary##ab", ab.primary_weapon, detail::primary_weapons, 6 );
+						xui::combo( "secondary##ab", ab.secondary_weapon, detail::secondary_weapons, 5 );
+						xui::checkbox( "armor##ab", ab.armor );
+						xui::checkbox( "defuser##ab", ab.defuser );
+						xui::checkbox( "taser##ab", ab.taser );
+						xui::multicombo( "grenades##ab", ab.grenades, detail::grenade_names, 5 );
+						xui::end_popup( );
+					}
+					xui::checkbox( "clantag", m.m_name_changer.clantag );
+					xui::checkbox( "override name", m.m_name_changer.override_name );
+					if ( xui::begin_popup( "##override_name_popup", 220.0f ) )
+					{
+						xui::text_input( "name##nc", m.m_name_changer.name.value, 32, "player name..." );
+						xui::end_popup( );
+					}
+					xui::checkbox( "watermark", m.m_watermark.enabled );
+					if ( xui::begin_popup( "##watermark_popup", 200.0f ) )
+					{
+						xui::checkbox( "fps##wm",      m.m_watermark.show_fps );
+						xui::checkbox( "ping##wm",     m.m_watermark.show_ping );
+						xui::checkbox( "time##wm",     m.m_watermark.show_time );
+						xui::checkbox( "user##wm",     m.m_watermark.show_user );
+						xui::checkbox( "map##wm",      m.m_watermark.show_map );
+						xui::checkbox( "tick rate##wm",m.m_watermark.show_tick );
+						xui::checkbox( "velocity##wm", m.m_watermark.show_velocity );
+						xui::end_popup( );
+					}
+					xui::end_child( );
 				}
 				xui::end_child( );
 			}
@@ -261,7 +270,7 @@ namespace rendering {
 		if ( subtab == 1 )
 		{
 			auto& rem = m.m_removals;
-			if ( xui::begin_child( "##misc_removals", col_w ) )
+			if ( xui::begin_child( "##misc_removals", col_w, body_h, true ) )
 			{
 				xui::checkbox( "remove crosshair", rem.crosshair );
 				xui::checkbox( "remove scope", rem.scope );
@@ -280,7 +289,7 @@ namespace rendering {
 		{
 			auto& cam = m.m_camera;
 			auto& vm = m.m_viewmodel_adjust;
-			if ( xui::begin_child( "##misc_camera", col_w ) )
+			if ( xui::begin_child( "##misc_camera", col_w, body_h, true ) )
 			{
 				xui::checkbox( "custom fov", cam.change_fov );
 				if ( xui::begin_popup( "##fov_popup", 220.0f ) )
@@ -306,7 +315,7 @@ namespace rendering {
 				xui::end_child( );
 			}
 			xui::layout::set_cursor( right_x - wx, body_y - wy );
-			if ( xui::begin_child( "##misc_viewmodel", col_w ) )
+			if ( xui::begin_child( "##misc_viewmodel", col_w, body_h, true ) )
 			{
 				xui::checkbox( "viewmodel adjust", vm.enabled );
 				if ( xui::begin_popup( "##vm_popup", 220.0f ) )
@@ -323,7 +332,7 @@ namespace rendering {
 		if ( subtab == 3 )
 		{
 			auto& hud = m.m_hud;
-			if ( xui::begin_child( "##misc_hud", col_w ) )
+			if ( xui::begin_child( "##misc_hud", col_w, body_h, true ) )
 			{
 				xui::checkbox( "crosshair overlay", hud.m_crosshair.enabled );
 				if ( xui::begin_popup( "##xhair_popup", 220.0f ) )

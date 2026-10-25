@@ -12,6 +12,7 @@ namespace rendering {
 		const auto content_w = this->m_w - tokens::gap * 2.0f - tokens::sidebar_w - tokens::gap;
 		const auto col_w = ( content_w - tokens::gap ) * 0.5f;
 		const auto right_x = content_x + col_w + tokens::gap;
+		const auto body_h = this->m_body_h;
 		const auto subtab = this->m_subtab;
 		xui::layout::set_cursor( content_x - wx, body_y - wy );
 		if ( subtab == 0 )
@@ -35,121 +36,128 @@ namespace rendering {
 						xui::end_popup( );
 					}
 				};
-			xui::layout::set_cursor( content_x - wx, body_y - wy );
-			if ( xui::begin_child( "##esp_items", col_w ) )
+			if ( xui::begin_child( "##world_items_left", col_w, body_h, true, true ) )
 			{
-				static int item_group{};
-				xui::combo( "group##item_sel", item_group, settings::esp::item::k_group_names, settings::esp::item::k_group_count );
-				xui::layout::separator( );
-				xui::checkbox( "item esp", item.m_overlay.group_toggle( item_group ) );
-				if ( xui::begin_popup( "##ie_grp_cfg", 220.0f ) )
+				if ( xui::begin_child( "##esp_items", 0.0f ) )
 				{
-					auto& g = item.m_overlay.groups[ item_group ];
-					char id_d[ 32 ]{}, id_m[ 32 ]{}, id_t[ 32 ]{}, id_i[ 32 ]{};
-					std::snprintf( id_d, sizeof( id_d ), "display##ie%d", item_group );
-					std::snprintf( id_m, sizeof( id_m ), "max dist##ie%d", item_group );
-					std::snprintf( id_t, sizeof( id_t ), "text color##ie%d", item_group );
-					std::snprintf( id_i, sizeof( id_i ), "icon color##ie%d", item_group );
-					xui::combo( id_d, g.display.value, display_types, 3 );
-					xui::slider_float( id_m, g.max_distance, 1.0f, 200.0f, "%.0fm" );
-					xui::color_picker( id_t, g.text_color );
-					xui::color_picker( id_i, g.icon_color );
-					xui::end_popup( );
-				}
-				xui::checkbox( "item chams", item.m_chams.group_toggle( item_group ) );
-				if ( xui::begin_popup( "##ic_grp_cfg", 220.0f ) )
-				{
-					auto& g = item.m_chams.groups[ item_group ];
-					char id_p[ 48 ]{}, id_pp[ 48 ]{}, id_s[ 48 ]{}, id_sp[ 48 ]{};
-					std::snprintf( id_p, sizeof( id_p ), "primary##ic%d", item_group );
-					std::snprintf( id_pp, sizeof( id_pp ), "##ic_p%d", item_group );
-					std::snprintf( id_s, sizeof( id_s ), "secondary##ic%d", item_group );
-					std::snprintf( id_sp, sizeof( id_sp ), "##ic_s%d", item_group );
-					draw_chams_layer( id_p, id_pp, g.primary );
-					draw_chams_layer( id_s, id_sp, g.secondary );
-					xui::end_popup( );
-				}
-				xui::checkbox( "item glow", item.m_glow.group_toggle( item_group ) );
-				if ( xui::begin_popup( "##ig_grp_cfg", 220.0f ) )
-				{
-					char id[ 32 ]{};
-					std::snprintf( id, sizeof( id ), "color##ig%d", item_group );
-					xui::color_picker( id, item.m_glow.groups[ item_group ].color );
-					xui::end_popup( );
-				}
-				xui::end_child( );
-			}
-			xui::layout::set_cursor( right_x - wx, body_y - wy );
-			if ( xui::begin_child( "##esp_projectiles", col_w ) )
-			{
-				static auto proj_group{ 0 };
-				xui::combo( "group##proj_sel", proj_group, settings::esp::projectile::k_group_names, settings::esp::projectile::k_group_count );
-				xui::layout::separator( );
-				const auto is_inferno = ( proj_group == 5 );
-				xui::checkbox( is_inferno ? "inferno esp" : "projectile esp", proj.m_overlay.group_toggle( proj_group ) );
-				if ( !is_inferno )
-				{
-					if ( xui::begin_popup( "##pe_grp_cfg", 220.0f ) )
+					static int item_group{};
+					xui::combo( "group##item_sel", item_group, settings::esp::item::k_group_names, settings::esp::item::k_group_count );
+					xui::layout::separator( );
+					xui::checkbox( "item esp", item.m_overlay.group_toggle( item_group ) );
+					if ( xui::begin_popup( "##ie_grp_cfg", 220.0f ) )
 					{
-						auto& g = proj.m_overlay.groups[ proj_group ];
+						auto& g = item.m_overlay.groups[ item_group ];
 						char id_d[ 32 ]{}, id_m[ 32 ]{}, id_t[ 32 ]{}, id_i[ 32 ]{};
-						std::snprintf( id_d, sizeof( id_d ), "display##pe%d", proj_group );
-						std::snprintf( id_m, sizeof( id_m ), "max dist##pe%d", proj_group );
-						std::snprintf( id_t, sizeof( id_t ), "text color##pe%d", proj_group );
-						std::snprintf( id_i, sizeof( id_i ), "icon color##pe%d", proj_group );
+						std::snprintf( id_d, sizeof( id_d ), "display##ie%d", item_group );
+						std::snprintf( id_m, sizeof( id_m ), "max dist##ie%d", item_group );
+						std::snprintf( id_t, sizeof( id_t ), "text color##ie%d", item_group );
+						std::snprintf( id_i, sizeof( id_i ), "icon color##ie%d", item_group );
 						xui::combo( id_d, g.display.value, display_types, 3 );
 						xui::slider_float( id_m, g.max_distance, 1.0f, 200.0f, "%.0fm" );
 						xui::color_picker( id_t, g.text_color );
 						xui::color_picker( id_i, g.icon_color );
 						xui::end_popup( );
 					}
-				}
-				else
-				{
-					if ( xui::begin_popup( "##inferno_cfg", 220.0f ) )
+					xui::checkbox( "item chams", item.m_chams.group_toggle( item_group ) );
+					if ( xui::begin_popup( "##ic_grp_cfg", 220.0f ) )
 					{
-						xui::color_picker( "fill color##inf", proj.m_overlay.m_infernos.fill_color );
-						xui::color_picker( "outline color##inf", proj.m_overlay.m_infernos.outline_color );
-						xui::slider_float( "outline thickness##inf", proj.m_overlay.m_infernos.outline_thickness, 0.5f, 5.0f, "%.1f" );
-						xui::checkbox( "glow##inf", proj.m_overlay.m_infernos.glow );
-						xui::slider_float( "glow strength##inf", proj.m_overlay.m_infernos.glow_strength, 0.1f, 1.0f, "%.2f" );
+						auto& g = item.m_chams.groups[ item_group ];
+						char id_p[ 48 ]{}, id_pp[ 48 ]{}, id_s[ 48 ]{}, id_sp[ 48 ]{};
+						std::snprintf( id_p, sizeof( id_p ), "primary##ic%d", item_group );
+						std::snprintf( id_pp, sizeof( id_pp ), "##ic_p%d", item_group );
+						std::snprintf( id_s, sizeof( id_s ), "secondary##ic%d", item_group );
+						std::snprintf( id_sp, sizeof( id_sp ), "##ic_s%d", item_group );
+						draw_chams_layer( id_p, id_pp, g.primary );
+						draw_chams_layer( id_s, id_sp, g.secondary );
 						xui::end_popup( );
 					}
-				}
-				const auto indicator_id = proj_group == 0 ? 0 : proj_group == 3 ? 1 : proj_group == 5 ? 2 : -1;
-				if ( indicator_id >= 0 )
-				{
-					xui::checkbox( is_inferno ? "indicator" : "landing indicator", proj.m_overlay.m_indicator.get_group( indicator_id ).enabled );
-					if ( xui::begin_popup( "##ind_grp_cfg", 220.0f ) )
+					xui::checkbox( "item glow", item.m_glow.group_toggle( item_group ) );
+					if ( xui::begin_popup( "##ig_grp_cfg", 220.0f ) )
 					{
-						auto& g = proj.m_overlay.m_indicator.get_group( indicator_id );
-						char id_a[ 32 ]{}, id_i[ 32 ]{}, id_b[ 32 ]{}, id_g[ 32 ]{}, id_gs[ 32 ]{};
-						std::snprintf( id_a, sizeof( id_a ), "arc color##ind%d", indicator_id );
-						std::snprintf( id_i, sizeof( id_i ), "icon color##ind%d", indicator_id );
-						std::snprintf( id_b, sizeof( id_b ), "background##ind%d", indicator_id );
-						std::snprintf( id_g, sizeof( id_g ), "glow##ind%d", indicator_id );
-						std::snprintf( id_gs, sizeof( id_gs ), "glow strength##ind%d", indicator_id );
-						xui::color_picker( id_a, g.arc_color );
-						xui::color_picker( id_i, g.icon_color );
-						xui::color_picker( id_b, g.background_color );
-						xui::checkbox( id_g, g.glow );
-						xui::slider_float( id_gs, g.glow_strength, 0.1f, 1.0f, "%.2f" );
+						char id[ 32 ]{};
+						std::snprintf( id, sizeof( id ), "color##ig%d", item_group );
+						xui::color_picker( id, item.m_glow.groups[ item_group ].color );
 						xui::end_popup( );
 					}
+					xui::end_child( );
 				}
 				xui::end_child( );
 			}
-			if ( xui::begin_child( "##esp_other", col_w ) )
+			xui::layout::set_cursor( right_x - wx, body_y - wy );
+			if ( xui::begin_child( "##world_items_right", col_w, body_h, true, true ) )
 			{
-				xui::checkbox( "bomb timer", other.bomb_timer );
-				xui::checkbox( "spectator list", other.spectator_list );
+				if ( xui::begin_child( "##esp_projectiles", 0.0f ) )
+				{
+					static auto proj_group{ 0 };
+					xui::combo( "group##proj_sel", proj_group, settings::esp::projectile::k_group_names, settings::esp::projectile::k_group_count );
+					xui::layout::separator( );
+					const auto is_inferno = ( proj_group == 5 );
+					xui::checkbox( is_inferno ? "inferno esp" : "projectile esp", proj.m_overlay.group_toggle( proj_group ) );
+					if ( !is_inferno )
+					{
+						if ( xui::begin_popup( "##pe_grp_cfg", 220.0f ) )
+						{
+							auto& g = proj.m_overlay.groups[ proj_group ];
+							char id_d[ 32 ]{}, id_m[ 32 ]{}, id_t[ 32 ]{}, id_i[ 32 ]{};
+							std::snprintf( id_d, sizeof( id_d ), "display##pe%d", proj_group );
+							std::snprintf( id_m, sizeof( id_m ), "max dist##pe%d", proj_group );
+							std::snprintf( id_t, sizeof( id_t ), "text color##pe%d", proj_group );
+							std::snprintf( id_i, sizeof( id_i ), "icon color##pe%d", proj_group );
+							xui::combo( id_d, g.display.value, display_types, 3 );
+							xui::slider_float( id_m, g.max_distance, 1.0f, 200.0f, "%.0fm" );
+							xui::color_picker( id_t, g.text_color );
+							xui::color_picker( id_i, g.icon_color );
+							xui::end_popup( );
+						}
+					}
+					else
+					{
+						if ( xui::begin_popup( "##inferno_cfg", 220.0f ) )
+						{
+							xui::color_picker( "fill color##inf", proj.m_overlay.m_infernos.fill_color );
+							xui::color_picker( "outline color##inf", proj.m_overlay.m_infernos.outline_color );
+							xui::slider_float( "outline thickness##inf", proj.m_overlay.m_infernos.outline_thickness, 0.5f, 5.0f, "%.1f" );
+							xui::checkbox( "glow##inf", proj.m_overlay.m_infernos.glow );
+							xui::slider_float( "glow strength##inf", proj.m_overlay.m_infernos.glow_strength, 0.1f, 1.0f, "%.2f" );
+							xui::end_popup( );
+						}
+					}
+					const auto indicator_id = proj_group == 0 ? 0 : proj_group == 3 ? 1 : proj_group == 5 ? 2 : -1;
+					if ( indicator_id >= 0 )
+					{
+						xui::checkbox( is_inferno ? "indicator" : "landing indicator", proj.m_overlay.m_indicator.get_group( indicator_id ).enabled );
+						if ( xui::begin_popup( "##ind_grp_cfg", 220.0f ) )
+						{
+							auto& g = proj.m_overlay.m_indicator.get_group( indicator_id );
+							char id_a[ 32 ]{}, id_i[ 32 ]{}, id_b[ 32 ]{}, id_g[ 32 ]{}, id_gs[ 32 ]{};
+							std::snprintf( id_a, sizeof( id_a ), "arc color##ind%d", indicator_id );
+							std::snprintf( id_i, sizeof( id_i ), "icon color##ind%d", indicator_id );
+							std::snprintf( id_b, sizeof( id_b ), "background##ind%d", indicator_id );
+							std::snprintf( id_g, sizeof( id_g ), "glow##ind%d", indicator_id );
+							std::snprintf( id_gs, sizeof( id_gs ), "glow strength##ind%d", indicator_id );
+							xui::color_picker( id_a, g.arc_color );
+							xui::color_picker( id_i, g.icon_color );
+							xui::color_picker( id_b, g.background_color );
+							xui::checkbox( id_g, g.glow );
+							xui::slider_float( id_gs, g.glow_strength, 0.1f, 1.0f, "%.2f" );
+							xui::end_popup( );
+						}
+					}
+					xui::end_child( );
+				}
+				if ( xui::begin_child( "##esp_other", 0.0f ) )
+				{
+					xui::checkbox( "bomb timer", other.bomb_timer );
+					xui::checkbox( "spectator list", other.spectator_list );
+					xui::end_child( );
+				}
 				xui::end_child( );
 			}
 		}
 		if ( subtab == 1 )
 		{
 			auto& scene = w.m_scene;
-			if ( xui::begin_child( "##world_scene_left", col_w ) )
+			if ( xui::begin_child( "##world_scene_left", col_w, body_h, true ) )
 			{
 				xui::checkbox( "skybox material", scene.skybox.custom_skybox );
 				if ( xui::begin_popup( "##skybox_popup", 220.0f ) )
@@ -208,7 +216,7 @@ namespace rendering {
 				xui::end_child( );
 			}
 			xui::layout::set_cursor( right_x - wx, body_y - wy );
-			if ( xui::begin_child( "##world_scene_right", col_w ) )
+			if ( xui::begin_child( "##world_scene_right", col_w, body_h, true ) )
 			{
 				xui::checkbox( "depth of field", scene.dof );
 				if ( xui::begin_popup( "##dof_popup", 220.0f ) )
@@ -225,7 +233,7 @@ namespace rendering {
 		if ( subtab == 2 )
 		{
 			auto& weather = w.m_weather;
-			if ( xui::begin_child( "##world_weather", col_w ) )
+			if ( xui::begin_child( "##world_weather", col_w, body_h, true ) )
 			{
 				xui::checkbox( "weather", weather.enabled );
 				if ( xui::begin_popup( "##weather_popup", 220.0f ) )

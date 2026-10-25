@@ -2,6 +2,7 @@
 #include "xui.hpp"
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 namespace {
 	struct overlay_storage
@@ -818,6 +819,12 @@ namespace xui {
 		if ( input.mouse_clicked && !popup.contains( input.mouse_x, input.mouse_y ) && !this->m_anchor.contains( input.mouse_x, input.mouse_y ) )
 		{
 			this->m_closing = true;
+			auto& c = get_ctx( );
+			if ( c.active_child_scroll == this->m_id )
+			{
+				c.active_child_scroll = null_id;
+			}
+			c.child_scroll_cache[ this->m_id ].scrollbar_dragging = false;
 			return true;
 		}
 		return popup.contains( input.mouse_x, input.mouse_y );
@@ -839,8 +846,23 @@ namespace xui {
 	bool popup_overlay::closing( ) const { return this->m_closing; }
 	rect popup_overlay::get_popup( ) const
 	{
-		const auto clamped = std::min( this->m_content_h, 400.0f );
-		return { this->m_anchor.x, this->m_anchor.bottom( ) + 4.0f, this->m_width, clamped };
+		const auto [vw, vh] = xdraw::viewport_size( );
+		constexpr auto margin{ 8.0f };
+		const auto max_w = std::max( 40.0f, static_cast< float >( vw ) - margin * 2.0f );
+		const auto max_h = std::max( 32.0f, static_cast< float >( vh ) - margin * 2.0f );
+		const auto w = std::min( this->m_width, max_w );
+		const auto h = std::min( { this->m_content_h, 400.0f, max_h } );
+		const auto max_x = std::max( margin, static_cast< float >( vw ) - margin - w );
+		const auto max_y = std::max( margin, static_cast< float >( vh ) - margin - h );
+		const auto x = std::clamp( this->m_anchor.x, margin, max_x );
+		const auto below_y = this->m_anchor.bottom( ) + 4.0f;
+		const auto above_y = this->m_anchor.y - h - 4.0f;
+		auto y = below_y;
+		if ( below_y + h > static_cast< float >( vh ) - margin )
+		{
+			y = above_y >= margin ? above_y : std::clamp( below_y, margin, max_y );
+		}
+		return { x, y, w, h };
 	}
 	namespace overlays {
 		bool is_open( std::uintptr_t id )
@@ -1040,7 +1062,7 @@ namespace xui {
 				return { 0.0f, 0.0f };
 			}
 			const auto& s = get_ctx( ).style;
-			const auto max_x = win->bounds.w - s.window_pad_x;
+			const auto max_x = win->bounds.w - ( win->flush_x ? 0.0f : s.window_pad_x );
 			const auto max_y = win->bounds.h - s.window_pad_y;
 			auto next_x = win->cursor_x;
 			auto next_y = win->cursor_y;
@@ -1171,7 +1193,7 @@ namespace xui {
 				win->cursor_y += win->line_h + s.item_spacing_y;
 				win->line_h = 0.0f;
 			}
-			const auto max_x = win->bounds.w - s.window_pad_x;
+			const auto max_x = win->bounds.w - ( win->flush_x ? 0.0f : s.window_pad_x );
 			const auto w = std::max( 0.0f, max_x - win->cursor_x );
 			const auto abs = item( w, 1.0f + sep_pad * 2.0f );
 			draw::current( ).line( abs.x, abs.y + sep_pad, abs.x + w, abs.y + sep_pad, s.separator, 1.0f );
@@ -1436,7 +1458,13 @@ namespace xui {
 		get_ctx( ).windows.pop_back( );
 		pop_id( );
 	}
-	bool begin_child( std::string_view title, float w, float h, bool scrollable )
+	namespace
+	{
+		constexpr auto k_child_scrollbar_w{ 6.0f };
+		constexpr auto k_child_scrollbar_pad{ 6.0f };
+		constexpr auto k_child_scrollbar_gutter{ k_child_scrollbar_w + k_child_scrollbar_pad * 2.0f };
+	}
+	bool begin_child( std::string_view title, float w, float h, bool scrollable, bool flush_x )
 	{
 		auto& c = get_ctx( );
 		const auto parent = layout::current_window_const( );
@@ -1467,32 +1495,28 @@ namespace xui {
 		auto pwin = layout::current_window( );
 		const auto consumed_y = pwin->cursor_y + ( pwin->line_h > 0.0f ? pwin->line_h + s.item_spacing_y : 0.0f );
 		const auto max_h = parent->bounds.h - consumed_y - s.window_pad_y;
-		if ( max_h > 0.0f )
+		if ( !parent->scrollable && max_h > 0.0f )
 		{
 			actual_h = std::min( actual_h, max_h );
 		}
 		const auto abs = layout::item( w, actual_h );
 		auto scroll_y{ 0.0f };
-		auto sb_inset{ 0.0f };
+		auto gutter{ 0.0f };
 		if ( scrollable )
 		{
 			auto& cs = c.child_scroll_cache[ id ];
 			scroll_y = cs.scroll;
-			constexpr auto k_scrollbar_w{ 6.0f };
-			constexpr auto k_scrollbar_pad{ 8.0f };
-			constexpr auto k_scrollbar_content_gap{ 0.0f };
-			const auto shrink_phase = std::clamp( cs.scrollbar_anim / 0.5f, 0.0f, 1.0f );
-			const auto shrink_eased = ease::out_cubic( shrink_phase );
-			sb_inset = ( k_scrollbar_w + k_scrollbar_pad + k_scrollbar_content_gap ) * shrink_eased;
+			gutter = k_child_scrollbar_gutter;
 		}
 		window_state state{};
 		state.title = std::string( title );
-		state.bounds = rect{ abs.x, abs.y, abs.w - sb_inset, abs.h };
-		state.cursor_x = s.window_pad_x;
+		state.bounds = rect{ abs.x, abs.y, abs.w - gutter, abs.h };
+		state.cursor_x = ( scrollable && flush_x ) ? 0.0f : s.window_pad_x;
 		state.cursor_y = s.window_pad_y - scroll_y;
 		state.is_child = true;
 		state.group_id = id;
 		state.scrollable = scrollable;
+		state.flush_x = scrollable && flush_x;
 		state.scroll_y = scroll_y;
 		c.windows.push_back( std::move( state ) );
 		auto& dl = draw::current( );
@@ -1517,36 +1541,44 @@ namespace xui {
 			const auto visible_h = win->bounds.h;
 			if ( win->scrollable )
 			{
-				const auto max_scroll = std::max( 0.0f, true_content_h - visible_h );
 				auto& cs = c.child_scroll_cache[ win->group_id ];
-				constexpr auto k_scrollbar_w{ 6.0f };
-				constexpr auto k_scrollbar_pad{ 8.0f };
-				constexpr auto k_scrollbar_content_gap{ 0.0f };
-				const auto shrink_phase = std::clamp( cs.scrollbar_anim / 0.5f, 0.0f, 1.0f );
-				const auto shrink_eased = ease::out_cubic( shrink_phase );
-				const auto inset = ( k_scrollbar_w + k_scrollbar_pad + k_scrollbar_content_gap ) * shrink_eased;
-				const auto full_w = win->bounds.w + inset;
-				const auto full_right = win->bounds.right( ) + inset;
+				const auto max_scroll = std::max( 0.0f, true_content_h - visible_h );
+				if ( max_scroll <= 0.0f )
+				{
+					cs.scroll = 0.0f;
+					cs.scroll_target = 0.0f;
+					if ( cs.scrollbar_dragging )
+					{
+						cs.scrollbar_dragging = false;
+						if ( c.active_child_scroll == win->group_id )
+						{
+							c.active_child_scroll = null_id;
+						}
+					}
+				}
+				const auto full_w = win->bounds.w + k_child_scrollbar_gutter;
 				const auto full_bounds = rect{ win->bounds.x, win->bounds.y, full_w, win->bounds.h };
-				const auto popup_hovered = !c.overlay_blocking( ) && input.in_rect( full_bounds );
-				const auto sb_target = ( popup_hovered || cs.scrollbar_dragging ) && max_scroll > 0.0f ? 1.0f : 0.0f;
-				const auto dt = xdraw::delta_time( );
-				const auto sb_speed = sb_target > cs.scrollbar_anim ? 7.0f : 12.0f;
-				cs.scrollbar_anim += ( sb_target - cs.scrollbar_anim ) * std::min( sb_speed * dt, 1.0f );
-				const auto sb_alpha_phase = std::clamp( ( cs.scrollbar_anim - 0.3f ) / 0.7f, 0.0f, 1.0f );
-				const auto sb_alpha = ease::out_cubic( sb_alpha_phase );
 				const auto track = rect
 				{
-					std::floorf( full_right - k_scrollbar_w - k_scrollbar_pad ),
-					std::floorf( win->bounds.y + k_scrollbar_pad ),
-					k_scrollbar_w,
-					std::floorf( win->bounds.h - k_scrollbar_pad * 2.0f )
+					std::floorf( full_bounds.right( ) - k_child_scrollbar_w - k_child_scrollbar_pad ),
+					std::floorf( win->bounds.y + k_child_scrollbar_pad ),
+					k_child_scrollbar_w,
+					std::floorf( win->bounds.h - k_child_scrollbar_pad * 2.0f )
 				};
-				const auto thumb_h_unclamped = ( max_scroll > 0.0f ) ? ( track.h * ( visible_h / true_content_h ) ) : track.h;
-				const auto thumb_h = std::floorf( std::max( 20.0f, thumb_h_unclamped ) );
-				const auto rel = max_scroll > 0.0f ? ( cs.scroll / max_scroll ) : 0.0f;
-				const auto thumb_y = std::floorf( track.y + rel * ( track.h - thumb_h ) );
-				const auto thumb = rect{ track.x, thumb_y, track.w, thumb_h };
+				const auto dt = xdraw::delta_time( );
+				const auto popup_hovered = !c.overlay_blocking( ) && input.in_rect( full_bounds );
+				const auto thumb_height = [ & ]
+				{
+					const auto ratio = true_content_h > 0.0f ? ( visible_h / true_content_h ) : 1.0f;
+					return std::floorf( std::max( 20.0f, track.h * ratio ) );
+				};
+				const auto thumb_at = [ & ]( float scroll )
+				{
+					const auto h = thumb_height( );
+					const auto rel = max_scroll > 0.0f ? std::clamp( scroll / max_scroll, 0.0f, 1.0f ) : 0.0f;
+					return rect{ track.x, std::floorf( track.y + rel * ( track.h - h ) ), track.w, h };
+				};
+				const auto thumb = thumb_at( cs.scroll );
 				if ( max_scroll > 0.0f && !c.overlay_blocking( ) )
 				{
 					if ( input.mouse_clicked && thumb.contains( input.mouse_x, input.mouse_y ) )
@@ -1559,8 +1591,9 @@ namespace xui {
 					else if ( input.mouse_clicked && track.contains( input.mouse_x, input.mouse_y ) )
 					{
 						const auto target_y = input.mouse_y - thumb.h * 0.5f;
-						const auto rel_click = std::clamp( ( target_y - track.y ) / ( track.h - thumb.h ), 0.0f, 1.0f );
+						const auto rel_click = std::clamp( ( target_y - track.y ) / std::max( 1.0f, track.h - thumb.h ), 0.0f, 1.0f );
 						cs.scroll_target = rel_click * max_scroll;
+						cs.scroll = cs.scroll_target;
 						cs.scrollbar_dragging = true;
 						cs.scrollbar_drag_offset = thumb.h * 0.5f;
 						c.active_child_scroll = win->group_id;
@@ -1578,19 +1611,29 @@ namespace xui {
 						}
 						else
 						{
-							const auto rel_drag = std::clamp( ( input.mouse_y - cs.scrollbar_drag_offset - track.y ) / ( track.h - thumb.h ), 0.0f, 1.0f );
+							const auto rel_drag = std::clamp( ( input.mouse_y - cs.scrollbar_drag_offset - track.y ) / std::max( 1.0f, track.h - thumb.h ), 0.0f, 1.0f );
 							cs.scroll_target = rel_drag * max_scroll;
 							cs.scroll = cs.scroll_target;
 						}
 					}
 					if ( popup_hovered && input.scroll_delta != 0.0f && !cs.scrollbar_dragging )
 					{
-						cs.scroll_target -= input.scroll_delta * 40.0f;
+						cs.scroll_target -= input.scroll_delta * 48.0f;
 					}
 				}
 				cs.scroll_target = std::clamp( cs.scroll_target, 0.0f, max_scroll );
-				cs.scroll += ( cs.scroll_target - cs.scroll ) * std::min( 18.0f * dt, 1.0f );
+				const auto blend = 1.0f - std::exp( -26.0f * dt );
+				cs.scroll += ( cs.scroll_target - cs.scroll ) * blend;
+				if ( std::fabs( cs.scroll_target - cs.scroll ) < 0.25f )
+				{
+					cs.scroll = cs.scroll_target;
+				}
 				cs.scroll = std::clamp( cs.scroll, 0.0f, max_scroll );
+				const auto scrolling = std::fabs( cs.scroll_target - cs.scroll ) > 0.25f;
+				const auto sb_target = ( ( popup_hovered || cs.scrollbar_dragging || scrolling ) && max_scroll > 0.0f ) ? 1.0f : 0.0f;
+				const auto sb_speed = sb_target > cs.scrollbar_anim ? 8.0f : 10.0f;
+				cs.scrollbar_anim += ( sb_target - cs.scrollbar_anim ) * std::min( sb_speed * dt, 1.0f );
+				const auto sb_alpha = ease::out_cubic( std::clamp( cs.scrollbar_anim, 0.0f, 1.0f ) );
 				draw::current( ).pop_clip( );
 				if ( max_scroll > 0.0f )
 				{
@@ -1619,15 +1662,16 @@ namespace xui {
 				if ( max_scroll > 0.0f && sb_alpha > 0.01f )
 				{
 					auto& dl = draw::current( );
-					const auto thumb_hovered = thumb.contains( input.mouse_x, input.mouse_y );
+					const auto drawn_thumb = thumb_at( cs.scroll );
+					const auto thumb_hovered = drawn_thumb.contains( input.mouse_x, input.mouse_y );
 					const auto thumb_active = thumb_hovered || cs.scrollbar_dragging;
-					auto track_col = xdraw::color{ 255, 255, 255, 30 };
+					auto track_col = xdraw::color{ 255, 255, 255, 24 };
 					track_col.a = static_cast< std::uint8_t >( track_col.a * sb_alpha );
-					auto thumb_col = thumb_active ? xdraw::color{ 255, 255, 255, 150 } : xdraw::color{ 255, 255, 255, 100 };
+					auto thumb_col = thumb_active ? xdraw::color{ 255, 255, 255, 150 } : xdraw::color{ 255, 255, 255, 90 };
 					thumb_col.a = static_cast< std::uint8_t >( thumb_col.a * sb_alpha );
-					const auto track_r = k_scrollbar_w * 0.5f;
+					const auto track_r = k_child_scrollbar_w * 0.5f;
 					dl.rect_filled( track.x, track.y, track.w, track.h, track_col, xdraw::corner_radius{ track_r } );
-					dl.rect_filled( thumb.x, thumb.y, thumb.w, thumb.h, thumb_col, xdraw::corner_radius{ track_r } );
+					dl.rect_filled( drawn_thumb.x, drawn_thumb.y, drawn_thumb.w, drawn_thumb.h, thumb_col, xdraw::corner_radius{ track_r } );
 				}
 			}
 			else
@@ -1694,6 +1738,75 @@ namespace xui {
 			ov->update_anchor( dot_abs );
 			ov->tick( );
 			const auto popup_rect = ov->get_popup( );
+			auto& cs = c.child_scroll_cache[ id ];
+			const auto popup_max_scroll = std::max( 0.0f, ov->content_h( ) - popup_rect.h );
+			if ( popup_max_scroll <= 0.0f )
+			{
+				cs.scroll = 0.0f;
+				cs.scroll_target = 0.0f;
+				cs.scrollbar_dragging = false;
+			}
+			else if ( !overlays::has_any_except( id ) )
+			{
+				const auto popup_track = rect
+				{
+					std::floorf( popup_rect.right( ) - k_child_scrollbar_w - k_child_scrollbar_pad ),
+					std::floorf( popup_rect.y + k_child_scrollbar_pad ),
+					k_child_scrollbar_w,
+					std::floorf( popup_rect.h - k_child_scrollbar_pad * 2.0f )
+				};
+				const auto ratio = ov->content_h( ) > 0.0f ? ( popup_rect.h / ov->content_h( ) ) : 1.0f;
+				const auto thumb_h = std::floorf( std::max( 20.0f, popup_track.h * ratio ) );
+				const auto rel = std::clamp( cs.scroll / popup_max_scroll, 0.0f, 1.0f );
+				const auto thumb = rect{ popup_track.x, std::floorf( popup_track.y + rel * ( popup_track.h - thumb_h ) ), popup_track.w, thumb_h };
+				if ( input.mouse_clicked && thumb.contains( input.mouse_x, input.mouse_y ) )
+				{
+					cs.scrollbar_dragging = true;
+					cs.scrollbar_drag_offset = input.mouse_y - thumb.y;
+					c.active_child_scroll = id;
+					c.active_window = null_id;
+				}
+				else if ( input.mouse_clicked && popup_track.contains( input.mouse_x, input.mouse_y ) )
+				{
+					const auto target_y = input.mouse_y - thumb.h * 0.5f;
+					const auto rel_click = std::clamp( ( target_y - popup_track.y ) / std::max( 1.0f, popup_track.h - thumb.h ), 0.0f, 1.0f );
+					cs.scroll_target = rel_click * popup_max_scroll;
+					cs.scroll = cs.scroll_target;
+					cs.scrollbar_dragging = true;
+					cs.scrollbar_drag_offset = thumb.h * 0.5f;
+					c.active_child_scroll = id;
+					c.active_window = null_id;
+				}
+				if ( cs.scrollbar_dragging )
+				{
+					if ( !input.mouse_down )
+					{
+						cs.scrollbar_dragging = false;
+						if ( c.active_child_scroll == id )
+						{
+							c.active_child_scroll = null_id;
+						}
+					}
+					else
+					{
+						const auto rel_drag = std::clamp( ( input.mouse_y - cs.scrollbar_drag_offset - popup_track.y ) / std::max( 1.0f, popup_track.h - thumb.h ), 0.0f, 1.0f );
+						cs.scroll_target = rel_drag * popup_max_scroll;
+						cs.scroll = cs.scroll_target;
+					}
+				}
+				if ( input.in_rect( popup_rect ) && input.scroll_delta != 0.0f && !cs.scrollbar_dragging )
+				{
+					cs.scroll_target -= input.scroll_delta * 48.0f;
+				}
+			}
+			cs.scroll_target = std::clamp( cs.scroll_target, 0.0f, popup_max_scroll );
+			const auto popup_blend = 1.0f - std::exp( -26.0f * xdraw::delta_time( ) );
+			cs.scroll += ( cs.scroll_target - cs.scroll ) * popup_blend;
+			if ( std::fabs( cs.scroll_target - cs.scroll ) < 0.25f )
+			{
+				cs.scroll = cs.scroll_target;
+			}
+			cs.scroll = std::clamp( cs.scroll, 0.0f, popup_max_scroll );
 			const auto et = ease::out_cubic( ov->open_anim( ) );
 			const auto animated_h = popup_rect.h * et;
 			const auto alpha_mult = et;
@@ -1711,9 +1824,11 @@ namespace xui {
 			draw::push_layer( xdraw::layer::top );
 			window_state state{};
 			state.title = std::string( label );
-			state.bounds = popup_rect;
+			state.bounds = rect{ popup_rect.x, popup_rect.y, popup_rect.w - ( popup_max_scroll > 0.0f ? k_child_scrollbar_w : 0.0f ), popup_rect.h };
 			state.cursor_x = s.window_pad_x;
-			state.cursor_y = s.window_pad_y;
+			state.cursor_y = s.window_pad_y - cs.scroll;
+			state.scrollable = popup_max_scroll > 0.0f;
+			state.scroll_y = cs.scroll;
 			state.is_child = true;
 			c.windows.push_back( std::move( state ) );
 			push_id( id );
@@ -1730,21 +1845,58 @@ namespace xui {
 		{
 			return;
 		}
-		const auto& s = get_ctx( ).style;
-		const auto content_h = win->content_h + s.window_pad_y;
+		auto& c = get_ctx( );
+		const auto& s = c.style;
+		const auto& input = c.input;
+		const auto content_h = win->content_h + win->scroll_y + s.window_pad_y;
+		popup_overlay* active{};
 		for ( auto& o : get_overlays( ).list )
 		{
 			auto ov = dynamic_cast< popup_overlay* >( o.get( ) );
 			if ( ov && !ov->closing( ) )
 			{
 				ov->set_content_h( content_h );
+				active = ov;
 				break;
 			}
 		}
-		get_ctx( ).inside_overlay = null_id;
+		if ( active )
+		{
+			const auto popup_rect = active->get_popup( );
+			auto& cs = c.child_scroll_cache[ active->id( ) ];
+			const auto max_scroll = std::max( 0.0f, content_h - popup_rect.h );
+			cs.scroll_target = std::clamp( cs.scroll_target, 0.0f, max_scroll );
+			cs.scroll = std::clamp( cs.scroll, 0.0f, max_scroll );
+			if ( max_scroll > 0.0f )
+			{
+				const auto track = rect
+				{
+					std::floorf( popup_rect.right( ) - k_child_scrollbar_w - k_child_scrollbar_pad ),
+					std::floorf( popup_rect.y + k_child_scrollbar_pad ),
+					k_child_scrollbar_w,
+					std::floorf( popup_rect.h - k_child_scrollbar_pad * 2.0f )
+				};
+				const auto ratio = content_h > 0.0f ? ( popup_rect.h / content_h ) : 1.0f;
+				const auto thumb_h = std::floorf( std::max( 20.0f, track.h * ratio ) );
+				const auto rel = std::clamp( cs.scroll / max_scroll, 0.0f, 1.0f );
+				const auto thumb = rect{ track.x, std::floorf( track.y + rel * ( track.h - thumb_h ) ), track.w, thumb_h };
+				const auto hovered = input.in_rect( popup_rect ) || thumb.contains( input.mouse_x, input.mouse_y );
+				const auto moving = std::fabs( cs.scroll_target - cs.scroll ) > 0.25f;
+				const auto alpha = ( ( hovered || cs.scrollbar_dragging || moving ) ? 1.0f : 0.65f ) * ease::out_cubic( active->open_anim( ) );
+				auto& dl = draw::current( );
+				auto track_col = xdraw::color{ 255, 255, 255, 24 };
+				track_col.a = static_cast< std::uint8_t >( track_col.a * alpha );
+				auto thumb_col = cs.scrollbar_dragging || thumb.contains( input.mouse_x, input.mouse_y ) ? xdraw::color{ 255, 255, 255, 150 } : xdraw::color{ 255, 255, 255, 95 };
+				thumb_col.a = static_cast< std::uint8_t >( thumb_col.a * alpha );
+				const auto track_r = k_child_scrollbar_w * 0.5f;
+				dl.rect_filled( track.x, track.y, track.w, track.h, track_col, xdraw::corner_radius{ track_r } );
+				dl.rect_filled( thumb.x, thumb.y, thumb.w, thumb.h, thumb_col, xdraw::corner_radius{ track_r } );
+			}
+		}
+		c.inside_overlay = null_id;
 		xdraw::get( xdraw::layer::top ).pop_clip( );
 		pop_id( );
-		get_ctx( ).windows.pop_back( );
+		c.windows.pop_back( );
 		draw::pop_layer( );
 	}
 	void text( std::string_view label, xdraw::color col )
@@ -2036,7 +2188,11 @@ namespace xui {
 			[[nodiscard]] rect get_popup( ) const
 			{
 				const auto h = k_pad * 2.0f + k_item_h * static_cast< float >( k_item_count );
-				return { this->m_anchor.x, this->m_anchor.y, k_popup_w, h };
+				const auto [vw, vh] = xdraw::viewport_size( );
+				constexpr auto margin{ 6.0f };
+				const auto max_x = std::max( margin, static_cast< float >( vw ) - margin - k_popup_w );
+				const auto max_y = std::max( margin, static_cast< float >( vh ) - margin - h );
+				return { std::clamp( this->m_anchor.x, margin, max_x ), std::clamp( this->m_anchor.y, margin, max_y ), k_popup_w, h };
 			}
 			[[nodiscard]] rect get_item_rect( const rect& popup, int index ) const
 			{
@@ -2810,12 +2966,28 @@ namespace xui {
 			rect get_dropdown( ) const
 			{
 				const auto full_h = static_cast< float >( this->m_items.size( ) ) * this->m_item_h + this->m_item_pad * 2.0f;
-				return { this->m_anchor.x, this->m_anchor.bottom( ) + 4.0f, this->m_width, std::min( full_h, this->k_max_h ) };
+				const auto [vw, vh] = xdraw::viewport_size( );
+				constexpr auto margin{ 6.0f };
+				const auto max_w = std::max( 40.0f, static_cast< float >( vw ) - margin * 2.0f );
+				const auto max_h = std::max( 32.0f, static_cast< float >( vh ) - margin * 2.0f );
+				const auto w = std::min( this->m_width, max_w );
+				const auto h = std::min( { full_h, this->k_max_h, max_h } );
+				const auto max_x = std::max( margin, static_cast< float >( vw ) - margin - w );
+				const auto max_y = std::max( margin, static_cast< float >( vh ) - margin - h );
+				const auto x = std::clamp( this->m_anchor.x, margin, max_x );
+				const auto below_y = this->m_anchor.bottom( ) + 4.0f;
+				const auto above_y = this->m_anchor.y - h - 4.0f;
+				auto y = below_y;
+				if ( below_y + h > static_cast< float >( vh ) - margin )
+				{
+					y = above_y >= margin ? above_y : std::clamp( below_y, margin, max_y );
+				}
+				return { x, y, w, h };
 			}
 			float max_scroll( ) const
 			{
 				const auto full_h = static_cast< float >( this->m_items.size( ) ) * this->m_item_h + this->m_item_pad * 2.0f;
-				return std::max( 0.0f, full_h - this->k_max_h );
+				return std::max( 0.0f, full_h - this->get_dropdown( ).h );
 			}
 			rect get_scrollbar_track( const rect& dd ) const
 			{
@@ -2830,7 +3002,7 @@ namespace xui {
 			rect get_scrollbar_thumb( const rect& track ) const
 			{
 				const auto full_h = static_cast< float >( this->m_items.size( ) ) * this->m_item_h + this->m_item_pad * 2.0f;
-				const auto thumb_h = std::max( 20.0f, track.h * ( this->k_max_h / full_h ) );
+				const auto thumb_h = std::max( 20.0f, track.h * ( this->get_dropdown( ).h / full_h ) );
 				const auto ms = this->max_scroll( );
 				const auto rel = ms > 0.0f ? ( this->m_scroll / ms ) : 0.0f;
 				const auto thumb_y = track.y + rel * ( track.h - thumb_h );
@@ -3140,12 +3312,28 @@ namespace xui {
 			rect get_dropdown( ) const
 			{
 				const auto full_h = static_cast< float >( this->m_count ) * this->m_item_h + this->m_item_pad * 2.0f;
-				return { this->m_anchor.x, this->m_anchor.bottom( ) + 4.0f, this->m_width, std::min( full_h, this->k_max_h ) };
+				const auto [vw, vh] = xdraw::viewport_size( );
+				constexpr auto margin{ 6.0f };
+				const auto max_w = std::max( 40.0f, static_cast< float >( vw ) - margin * 2.0f );
+				const auto max_h = std::max( 32.0f, static_cast< float >( vh ) - margin * 2.0f );
+				const auto w = std::min( this->m_width, max_w );
+				const auto h = std::min( { full_h, this->k_max_h, max_h } );
+				const auto max_x = std::max( margin, static_cast< float >( vw ) - margin - w );
+				const auto max_y = std::max( margin, static_cast< float >( vh ) - margin - h );
+				const auto x = std::clamp( this->m_anchor.x, margin, max_x );
+				const auto below_y = this->m_anchor.bottom( ) + 4.0f;
+				const auto above_y = this->m_anchor.y - h - 4.0f;
+				auto y = below_y;
+				if ( below_y + h > static_cast< float >( vh ) - margin )
+				{
+					y = above_y >= margin ? above_y : std::clamp( below_y, margin, max_y );
+				}
+				return { x, y, w, h };
 			}
 			float max_scroll( ) const
 			{
 				const auto full_h = static_cast< float >( this->m_count ) * this->m_item_h + this->m_item_pad * 2.0f;
-				return std::max( 0.0f, full_h - this->k_max_h );
+				return std::max( 0.0f, full_h - this->get_dropdown( ).h );
 			}
 			float m_width{};
 			std::vector<std::string> m_items{};
@@ -3503,7 +3691,19 @@ namespace xui {
 				const auto sv_size{ 170.0f };
 				const auto w = this->m_show_alpha ? ( pad + sv_size + bar_spacing + bar_w + pad ) : ( pad + sv_size + pad );
 				const auto h = pad + sv_size + bar_spacing + hue_bar_h + pad;
-				return { this->m_anchor.x, this->m_anchor.bottom( ) + 2.0f, w, h };
+				const auto [vw, vh] = xdraw::viewport_size( );
+				constexpr auto margin{ 8.0f };
+				const auto max_x = std::max( margin, static_cast< float >( vw ) - margin - w );
+				const auto max_y = std::max( margin, static_cast< float >( vh ) - margin - h );
+				const auto x = std::clamp( this->m_anchor.x, margin, max_x );
+				const auto below_y = this->m_anchor.bottom( ) + 2.0f;
+				const auto above_y = this->m_anchor.y - h - 2.0f;
+				auto y = below_y;
+				if ( below_y + h > static_cast< float >( vh ) - margin )
+				{
+					y = above_y >= margin ? above_y : std::clamp( below_y, margin, max_y );
+				}
+				return { x, y, w, h };
 			}
 			xdraw::color* m_col{};
 			float m_hue{};
@@ -3662,7 +3862,11 @@ namespace xui {
 			[[nodiscard]] rect get_popup( ) const
 			{
 				const auto h = k_pad * 2.0f + k_item_h * static_cast< float >( k_item_count );
-				return { this->m_anchor.x, this->m_anchor.y, k_popup_w, h };
+				const auto [vw, vh] = xdraw::viewport_size( );
+				constexpr auto margin{ 6.0f };
+				const auto max_x = std::max( margin, static_cast< float >( vw ) - margin - k_popup_w );
+				const auto max_y = std::max( margin, static_cast< float >( vh ) - margin - h );
+				return { std::clamp( this->m_anchor.x, margin, max_x ), std::clamp( this->m_anchor.y, margin, max_y ), k_popup_w, h };
 			}
 			[[nodiscard]] rect get_item_rect( const rect& popup, int index ) const
 			{
