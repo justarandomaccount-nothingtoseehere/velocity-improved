@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <fstream>
+#include <vector>
 #include <utilities/memory/memory.hpp>
 #include <utilities/addresses/addresses.hpp>
 #include <utilities/logging/logging.hpp>
@@ -24,10 +25,11 @@ namespace features::changer {
 			{
 				const auto item_count = memory::safe_read<int>( schema + 0xF8 ).value_or( 0 );
 				const auto item_array = memory::safe_read<std::uintptr_t>( schema + 0x100 ).value_or( 0 );
-				const auto paint_count = memory::safe_read<int>( schema + 0x2A4 ).value_or( 0 );
+				const auto paint_count = memory::safe_read<int>( schema + 0x2B4 ).value_or( 0 );
+				const auto paint_root = memory::safe_read<int>( schema + 0x2B0 ).value_or( -1 );
 				const auto paint_nodes = memory::safe_read<std::uintptr_t>( schema + 0x2A8 ).value_or( 0 );
 				if ( item_count > 0 && item_count <= 10000 && item_array
-					&& paint_count > 0 && paint_count <= 10000 && paint_nodes )
+					&& paint_count > 0 && paint_count <= 10000 && paint_root >= 0 && paint_nodes )
 				{
 					schema_ready = true;
 					break;
@@ -213,43 +215,60 @@ namespace features::changer {
 	}
 	bool econ_item_system::parse_paint_kits( std::uintptr_t schema )
 	{
-		const auto tree_base = schema + 0x2A0;
-		const auto count = memory::read<int>( tree_base + 0x04 );
-		const auto nodes = memory::read<std::uintptr_t>( tree_base + 0x08 );
-		if ( !nodes || count <= 0 || count > 10000 )
+		const auto root = memory::read<int>( schema + 0x2B0 );
+		const auto node_count = memory::read<int>( schema + 0x2A0 );
+		const auto num_elements = memory::read<int>( schema + 0x2B4 );
+		const auto nodes = memory::read<std::uintptr_t>( schema + 0x2A8 );
+		if ( !nodes || root < 0 || node_count <= 0 || node_count > 10000
+			|| num_elements <= 0 || num_elements > 10000 )
 		{
 			return false;
 		}
-		this->m_paint_kits.reserve( count );
-		for ( auto i = 0; i < count; i++ )
+		this->m_paint_kits.reserve( num_elements );
+		std::vector<int> stack{};
+		stack.reserve( num_elements );
+		auto current = root;
+		auto visited = 0;
+		while ( ( current != -1 || !stack.empty( ) ) && visited < num_elements )
 		{
-			const auto node_base = nodes + static_cast< std::uintptr_t >( 32 * i );
-			const auto pk_ptr = memory::read<std::uintptr_t>( node_base + 24 );
-			if ( !pk_ptr )
+			while ( current != -1 )
 			{
-				continue;
+				if ( current < 0 || current >= node_count )
+				{
+					return false;
+				}
+				stack.push_back( current );
+				current = memory::read<int>( nodes + static_cast< std::uintptr_t >( 32 * current ) );
 			}
-			paint_kit pk{};
-			pk.id = memory::read<int>( pk_ptr + 0x00 );
-			pk.wear_min = memory::read<float>( pk_ptr + 0x6C );
-			pk.wear_max = memory::read<float>( pk_ptr + 0x70 );
-			pk.legacy_model = memory::read<bool>( pk_ptr + 0xAE );
-			pk.rarity = static_cast< std::uint8_t >( memory::read<int>( pk_ptr + 0x44 ) & 0xFF );
-			if ( const auto name_ptr = memory::read<std::uintptr_t>( pk_ptr + 0x08 ); name_ptr )
+			current = stack.back( );
+			stack.pop_back( );
+			const auto node_base = nodes + static_cast< std::uintptr_t >( 32 * current );
+			if ( const auto pk_ptr = memory::read<std::uintptr_t>( node_base + 24 ); pk_ptr )
 			{
-				pk.name = memory::read_string( name_ptr );
+				paint_kit pk{};
+				pk.id = memory::read<int>( pk_ptr + 0x00 );
+				pk.wear_min = memory::read<float>( pk_ptr + 0x6C );
+				pk.wear_max = memory::read<float>( pk_ptr + 0x70 );
+				pk.legacy_model = memory::read<bool>( pk_ptr + 0xAE );
+				pk.rarity = static_cast< std::uint8_t >( memory::read<int>( pk_ptr + 0x44 ) & 0xFF );
+				if ( const auto name_ptr = memory::read<std::uintptr_t>( pk_ptr + 0x08 ); name_ptr )
+				{
+					pk.name = memory::read_string( name_ptr );
+				}
+				if ( const auto desc_ptr = memory::read<std::uintptr_t>( pk_ptr + 0x10 ); desc_ptr )
+				{
+					pk.desc_token = memory::read_string( desc_ptr );
+				}
+				if ( const auto name_token_ptr = memory::read<std::uintptr_t>( pk_ptr + 0x18 ); name_token_ptr )
+				{
+					pk.name_token = memory::read_string( name_token_ptr );
+				}
+				this->m_paint_kits.push_back( std::move( pk ) );
 			}
-			if ( const auto desc_ptr = memory::read<std::uintptr_t>( pk_ptr + 0x10 ); desc_ptr )
-			{
-				pk.desc_token = memory::read_string( desc_ptr );
-			}
-			if ( const auto name_token_ptr = memory::read<std::uintptr_t>( pk_ptr + 0x18 ); name_token_ptr )
-			{
-				pk.name_token = memory::read_string( name_token_ptr );
-			}
-			this->m_paint_kits.push_back( std::move( pk ) );
+			++visited;
+			current = memory::read<int>( node_base + 4 );
 		}
-		return !this->m_paint_kits.empty( );
+		return visited == num_elements && !this->m_paint_kits.empty( );
 	}
 	void econ_item_system::build_indices( )
 	{
