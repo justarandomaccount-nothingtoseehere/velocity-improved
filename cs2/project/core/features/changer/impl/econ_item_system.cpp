@@ -22,10 +22,10 @@ namespace features::changer {
 				: 0;
 			if ( schema )
 			{
-				const auto item_count = memory::safe_read<int>( schema + 0x128 ).value_or( 0 );
-				const auto item_array = memory::safe_read<std::uintptr_t>( schema + 0x130 ).value_or( 0 );
-				const auto paint_count = memory::safe_read<int>( schema + 0x2F0 ).value_or( 0 );
-				const auto paint_nodes = memory::safe_read<std::uintptr_t>( schema + 0x2F8 ).value_or( 0 );
+				const auto item_count = memory::safe_read<int>( schema + 0xF8 ).value_or( 0 );
+				const auto item_array = memory::safe_read<std::uintptr_t>( schema + 0x100 ).value_or( 0 );
+				const auto paint_count = memory::safe_read<int>( schema + 0x2A4 ).value_or( 0 );
+				const auto paint_nodes = memory::safe_read<std::uintptr_t>( schema + 0x2A8 ).value_or( 0 );
 				if ( item_count > 0 && item_count <= 10000 && item_array
 					&& paint_count > 0 && paint_count <= 10000 && paint_nodes )
 				{
@@ -144,8 +144,8 @@ namespace features::changer {
 	}
 	bool econ_item_system::parse_item_defs( std::uintptr_t schema )
 	{
-		const auto count = memory::read<int>( schema + 0x128 );
-		const auto array = memory::read<std::uintptr_t>( schema + 0x130 );
+		const auto count = memory::read<int>( schema + 0xF8 );
+		const auto array = memory::read<std::uintptr_t>( schema + 0x100 );
 		if ( !array || count <= 0 || count > 10000 )
 		{
 			return false;
@@ -153,13 +153,17 @@ namespace features::changer {
 		this->m_item_defs.reserve( count );
 		for ( auto i = 0; i < count; i++ )
 		{
-			const auto entry_base = array + static_cast< std::uintptr_t >( 32 * i );
-			const auto def_index = memory::read<int>( entry_base + 16 );
+			const auto entry_base = array + static_cast< std::uintptr_t >( 24 * i );
+			if ( memory::read<int>( entry_base + 16 ) < -1 )
+			{
+				continue;
+			}
+			const auto def_index = memory::read<int>( entry_base + 0 );
 			if ( def_index < -1 )
 			{
 				continue;
 			}
-			const auto def_ptr = memory::read<std::uintptr_t>( entry_base + 24 );
+			const auto def_ptr = memory::read<std::uintptr_t>( entry_base + 8 );
 			if ( !def_ptr )
 			{
 				continue;
@@ -169,10 +173,13 @@ namespace features::changer {
 			item.loadout_slot = memory::read<int>( def_ptr + 0x338 );
 			item.used_by_classes = memory::read<std::uint32_t>( def_ptr + 0x368 );
 			item.rarity = memory::read<std::uint8_t>( def_ptr + 0x42 );
+			if ( const auto class_ptr = memory::read<std::uintptr_t>( def_ptr + 0x248 ); class_ptr )
+			{
+				item.item_class = memory::read_string( class_ptr );
+			}
 			if ( const auto name_ptr = memory::read<std::uintptr_t>( def_ptr + 0x260 ); name_ptr )
 			{
 				item.name = memory::read_string( name_ptr );
-				item.item_class = item.name;
 			}
 			if ( const auto model_ptr = memory::read<std::uintptr_t>( def_ptr + 0x148 ); model_ptr )
 			{
@@ -206,8 +213,8 @@ namespace features::changer {
 	}
 	bool econ_item_system::parse_paint_kits( std::uintptr_t schema )
 	{
-		const auto tree_base = schema + 0x2F0;
-		const auto count = memory::read<int>( tree_base + 0x00 );
+		const auto tree_base = schema + 0x2A0;
+		const auto count = memory::read<int>( tree_base + 0x04 );
 		const auto nodes = memory::read<std::uintptr_t>( tree_base + 0x08 );
 		if ( !nodes || count <= 0 || count > 10000 )
 		{
