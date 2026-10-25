@@ -190,9 +190,6 @@ namespace systems {
 		guard.save<math::vector3>( local.pawn + SCHEMA( "C_CSPlayerPawn", "m_angStashedShootAngles"_hash ) );
 		guard.save<math::vector3>( local.pawn + SCHEMA( "C_CSPlayerPawn", "m_vecStashedGrenadeThrowPosition"_hash ) );
 		guard.save<math::vector3>( local.pawn + SCHEMA( "C_CSPlayerPawn", "m_vecStashedVelocity"_hash ) );
-		guard.save_raw( local.pawn + SCHEMA( "C_CSPlayerPawn", "m_angShootAngleHistory"_hash ), sizeof( math::vector3 ) * 2 );
-		guard.save_raw( local.pawn + SCHEMA( "C_CSPlayerPawn", "m_vecThrowPositionHistory"_hash ), sizeof( math::vector3 ) * 2 );
-		guard.save_raw( local.pawn + SCHEMA( "C_CSPlayerPawn", "m_vecVelocityHistory"_hash ), sizeof( math::vector3 ) * 2 );
 		guard.save<math::vector3>( local.pawn + SCHEMA( "C_BaseModelEntity", "m_vecViewOffset"_hash ) );
 		guard.save<int>( aim_punch_services + SCHEMA( "CCSPlayer_AimPunchServices", "m_predictableBaseTick"_hash ) );
 		guard.save<float>( aim_punch_services + SCHEMA( "CCSPlayer_AimPunchServices", "m_predictableBaseTickInterpAmount"_hash ) );
@@ -243,7 +240,6 @@ namespace systems {
 		guard.save<math::vector3>( movement_services + SCHEMA( "CCSPlayer_MovementServices", "m_vecUp"_hash ) );
 		guard.save<int>( movement_services + SCHEMA( "CCSPlayer_MovementServices", "m_nGameCodeHasMovedPlayerAfterCommand"_hash ) );
 		guard.save<float>( movement_services + SCHEMA( "CCSPlayer_MovementServices", "m_fStashGrenadeParameterWhen"_hash ) );
-		guard.save<std::uintptr_t>( movement_services + SCHEMA( "CCSPlayer_MovementServices", "m_nButtonDownMaskPrev"_hash ) );
 		guard.save<float>( movement_services + SCHEMA( "CCSPlayer_MovementServices", "m_flHeightAtJumpStart"_hash ) );
 		guard.save<float>( movement_services + SCHEMA( "CCSPlayer_MovementServices", "m_flMaxJumpHeightThisJump"_hash ) );
 		guard.save<float>( movement_services + SCHEMA( "CCSPlayer_MovementServices", "m_flMaxJumpHeightLastJump"_hash ) );
@@ -258,8 +254,6 @@ namespace systems {
 		guard.save<int>( movement_services + SCHEMA( "CCSPlayer_MovementServices", "m_nLastJumpTick"_hash ) );
 		guard.save<float>( movement_services + SCHEMA( "CCSPlayer_MovementServices", "m_flLastJumpFrac"_hash ) );
 		guard.save<float>( movement_services + SCHEMA( "CCSPlayer_MovementServices", "m_flLastJumpVelocityZ"_hash ) );
-		guard.save<float>( movement_services + SCHEMA( "CCSPlayer_MovementServices", "m_gtLastTimeOnStaticWorldGround"_hash ) );
-		guard.save<float>( movement_services + SCHEMA( "CCSPlayer_MovementServices", "m_gtLastTimeInAir"_hash ) );
 		guard.save_raw( movement_services + SCHEMA( "CCSPlayer_MovementServices", "m_LegacyJump"_hash ), 24 );
 		guard.save_raw( movement_services + SCHEMA( "CCSPlayer_MovementServices", "m_ModernJump"_hash ), 56 );
 		guard.save<bool>( movement_services + SCHEMA( "CCSPlayer_MovementServices", "m_bUseFrictionStashedSpeed"_hash ) );
@@ -291,14 +285,14 @@ namespace systems {
 			std::uintptr_t pawn_guard[ 1 ]{};
 			memory::call<void>( prediction_set_pawn, pawn_guard, local.pawn );
 			memory::call<void>( prediction_set_state, pred_state, std::uint8_t( 1 ) );
-			memory::call_vfunc<void>( movement_services, 46, cmd_ptr );
+			memory::call_vfunc<void>( movement_services, 47, cmd_ptr );
 			const auto move_data = memory::call_vfunc<std::uintptr_t>( movement_services, 38 );
-			const bool fb_seedsync = memory::call_vfunc<bool>( movement_services, 48 );
+			const bool fb_seedsync = memory::call_vfunc<bool>( movement_services, 49 );
 			if ( !move_data )
 			{
 				memory::call<void>( prediction_set_state, pred_state, std::uint8_t( 0 ) );
 				memory::call<void>( prediction_reset_pawn, pawn_guard );
-				memory::call_vfunc<void>( movement_services, 47 );
+				memory::call_vfunc<void>( movement_services, 48 );
 				return false;
 			}
 			memory::call<void>( prediction_setup_move, move_data, cmd_ptr, next_tick, fb_seedsync ? 1 : 0 );
@@ -310,7 +304,7 @@ namespace systems {
 			memory::write( addresses::globals::simulation_player, 0ull );
 			memory::call<void>( prediction_set_state, pred_state, std::uint8_t( 0 ) );
 			memory::call<void>( prediction_reset_pawn, pawn_guard );
-			memory::call_vfunc<void>( movement_services, 47 );
+			memory::call_vfunc<void>( movement_services, 48 );
 			attack_guard.restore( );
 			fn( );
 		}

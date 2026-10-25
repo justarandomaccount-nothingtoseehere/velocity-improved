@@ -339,7 +339,8 @@ entry = (std::max)( entry, first );
 		const auto max_unlag = [ ]
 			{
 				const auto server_limit = CONVAR ("sv_maxunlag")->get<float>( );
-				const auto player_limit = CONVAR ("sv_maxunlag_player")->get<float>( );
+				const auto player_cvar = CONVAR ("sv_maxunlag_player");
+				const auto player_limit = player_cvar ? player_cvar->get<float>( ) : 0.0f;
 				return player_limit > 0.0f ? (std::min)( server_limit, player_limit ) : server_limit;
 			}( );
 		const auto current_time = memory::read<float>( global_vars + 0x30 );
@@ -521,7 +522,7 @@ entry = (std::max)( entry, first );
 			{
 				return;
 			}
-			this->m_server_tick = memory::read<int>( tick_state + 892 );
+			this->m_server_tick = memory::call_vfunc<int>( tick_state, 6 );
 		}
 		{
 			const auto idx_raw = memory::read<int>( addresses::globals::frame_input_ring_idx );
@@ -817,7 +818,7 @@ entry = (std::max)( entry, first );
 	math::vector3 shared::get_shoot_position( ) const
 	{
 		math::vector3 out{};
-		memory::call_vfunc<void>( this->m_ctx.weapon_services, 29, reinterpret_cast< std::uintptr_t >( &out ) );
+		memory::call_vfunc<void>( this->m_ctx.weapon_services, 32, reinterpret_cast< std::uintptr_t >( &out ) );
 		return out;
 	}
 	math::vector3 shared::get_interpolated_shoot_position( std::uintptr_t local_pawn, bool newest ) const

@@ -6,7 +6,7 @@ namespace patterns {
 	const signatures::signature_t& create_move = SIGNATURE("client.dll", "FF FF FF FF 48 8D 05 ? ? ? ? 48 89 0D ? ? ? ?", signatures::resolve_op::rip_relative, 7, 40, true);
 	const signatures::signature_t& csgo_input = SIGNATURE("client.dll", "84 C0 74 0C 48 8D 0D ? ? ? ? E8 ? ? ? ?", signatures::resolve_op::rip_relative, 7, 0, false);
 	const signatures::signature_t& draw_flash_effect = SIGNATURE("client.dll", "85 D2 0F 88 ? ? ? ? 48 89 4C 24 ? 55 56");
-	const signatures::signature_t& draw_legs = SIGNATURE("client.dll", "4C 8B DC 55 53 56 57 41 57 49 8D AB ? ? ? ? 48 81 EC ? ? ? ? 8B 42 ? 4D 8B F9 F2 0F 10 42");
+	const signatures::signature_t& draw_legs = SIGNATURE("client.dll", "4C 8B DC 55 53 56 57 41 56 49 8D AB ? ? ? ? 48 81 EC ? ? ? ? 8B 42 ? 4D 8B F1 F2 0F 10 42");
 	const signatures::signature_t& draw_overhead = SIGNATURE("client.dll", "40 53 48 83 EC ? 48 8B D9 83 FA ? 75 ?");
 	const signatures::signature_t& draw_scene_object = SIGNATURE("scenesystem.dll", "48 8D 05 ? ? ? ? 48 89 07 48 8B 7C 24 48", signatures::resolve_op::rip_relative, 3, 8, true);
 	const signatures::signature_t& draw_scene_object_array = SIGNATURE("scenesystem.dll", "48 8B C4 48 89 50 ? 48 89 48 ? 55 53 56 57 41 54 41 55 41 56 41 57 48 8D A8 ? ? ? ? 48 81 EC ? ? ? ? 0F 29 70 ?");
@@ -87,7 +87,7 @@ namespace patterns {
 	const signatures::signature_t& process_input_event = SIGNATURE("client.dll", "CC CC 48 89 5C 24 08 57 48 83 EC 20 C6 41 08 00 48 8D 05 ? ? ? ? 48 89 01 48 8B D9", signatures::resolve_op::rip_relative, 19, 32, true);
 	const signatures::signature_t& read_frame_input = SIGNATURE("client.dll", "E8 ? ? ? ? 4D 8B C5 8B D3", signatures::resolve_op::rel_call, 0, 0, false);
 	const signatures::signature_t& remove_entity = SIGNATURE("client.dll", "48 8D 05 ? ? ? ? 48 89 07 33 D2 40 88 B7 28 21 00 00", signatures::resolve_op::rip_relative, 3, 128, true);
-	const signatures::signature_t& render_crosshair = SIGNATURE("client.dll", "48 8B C8 44 88 6C 24 30 E8 ? ? ? ? 84 C0 0F 84 ? ? ? ?", signatures::resolve_op::rel_call, 8, 0, false);
+	const signatures::signature_t& render_crosshair = SIGNATURE("client.dll", "48 89 5C 24 ? 57 48 83 EC ? 48 8B D9 E8 ? ? ? ? 48 85 C0");
 	const signatures::signature_t& render_decals = SIGNATURE("client.dll", "44 88 4C 24 20 55 53 41 54 41 55 48 8D 6C 24 ? 48 81 EC ? ? ? ? 4C 8B 15 ? ? ? ? 4C 8B EA 4C 8B E1");
 	const signatures::signature_t& render_game_system_storage = SIGNATURE("client.dll", "48 8B 0D ? ? ? ? 41 8B D6 E8 ? ? ? ? 41 8B 5F", signatures::resolve_op::rip_relative, 3, 0, false);
 	const signatures::signature_t& render_scope = SIGNATURE("client.dll", "48 8B C4 53 57 48 83 EC 68 48 8B FA");
@@ -126,7 +126,7 @@ namespace patterns {
 	const signatures::signature_t& weapon_set_mesh_group_mask = SIGNATURE("client.dll", "48 89 5C 24 ? 48 89 74 24 ? 57 48 83 EC ? 48 8D 99 ? ? ? ? 48 8B 71");
 	const signatures::signature_t& weapon_update_accuracy = SIGNATURE("client.dll", "40 57 41 56 48 83 EC 68 48 8B F9 E8 ? ? ? ? 4C 8B F0 48 85 C0");
 	const signatures::signature_t& weapon_update_composite_material = SIGNATURE("client.dll", "48 89 5C 24 10 48 89 6C 24 18 48 89 74 24 20 57 41 56 41 57 48 83 EC 20 44 0F B6 F2 48 8B F9");
-	const signatures::signature_t& weapon_update_skin = SIGNATURE("client.dll", "40 55 53 41 57 48 8D AC 24 00 FE FF FF 48 81 EC 00 03 00 00 48 8B 05 ? ? ? ? 44 0F B6 FA 48 8B D9");
+	const signatures::signature_t& weapon_update_skin = SIGNATURE("client.dll", "40 55 56 41 57 48 8D 6C 24 ? 48 81 EC ? ? ? ? 48 8B 05 ? ? ? ? 44 0F B6 FA 48 8B F1");
 	const signatures::signature_t& econ_item_view_set_attribute = SIGNATURE("client.dll", "40 53 48 83 EC 20 48 8B D9 48 81 C1 08 02 00 00");
 	const signatures::signature_t& econ_item_view_remove_attribute = SIGNATURE("client.dll", "40 53 48 83 EC 20 48 63 81 ? ? ? ? 44 0F B7 CA");
 	const signatures::signature_t& econ_item_view_invalidate_description = SIGNATURE("client.dll", "48 89 5C 24 ? 48 89 74 24 ? 57 48 83 EC 20 48 8D B9 ? ? ? ? 48 8B F1");
