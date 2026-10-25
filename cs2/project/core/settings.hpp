@@ -1274,7 +1274,7 @@ struct misc
 	xui::setting preserve_killfeed{ true, { }, "preserve killfeed", "misc" };
 	xui::setting reveal_radar{ true, { }, "reveal radar", "misc" };
 	xui::setting disable_game_logs{ true, { }, "disable game logs", "misc" };
-	config::val<int> menu_key{ VK_INSERT, "misc", "menu key" };
+	config::val<int> menu_key{ VK_DELETE, "misc", "menu key" };
 	struct watermark_cfg
 	{
 		xui::setting enabled{ true, { }, "watermark", "watermark" };
