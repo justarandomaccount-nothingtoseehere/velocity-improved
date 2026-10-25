@@ -22,9 +22,6 @@ Layout:
 velocity/
 ├── AGENTS.md                  # this file
 ├── README.md                  # build guide + contributing rules
-├── .clang-format              # formatting rules (advisory, partly stale)
-├── .clang-tidy                # tidy checks (advisory)
-├── .clang-format-ignore
 ├── .gitignore
 ├── analysis/                  # LOCAL ONLY, git-ignored: binaries, .i64 DBs, dumps
 └── cs2/
@@ -239,10 +236,9 @@ public `.hpp` should be added to `<ClInclude>`. Include directories are
 `<core/...>`, `<utilities/...>` and `<external/...>` includes work.
 
 Agents cannot build here. `clang -fsyntax-only` is only a rough approximation
-and generally cannot resolve the MSVC/Windows headers, so static review and
-`clang-format` are the practical checks; MSVC stays authoritative.
-`clang-format` and `clang-tidy` are available locally; format is mandatory,
-tidy is advisory.
+and generally cannot resolve the MSVC/Windows headers, so static review is the
+practical check; MSVC stays authoritative. The repository ships no formatter
+or tidy configuration — match the surrounding file's style by hand.
 
 ## 5. Code style
 
@@ -389,15 +385,12 @@ No build happens on this machine, so verification is explicit and manual:
 4. Verify every engine assumption (address, layout, schema, vtable slot)
    against a real source before trusting it, and re-check ABI structs with
    `static_assert` against the current binaries.
-5. Run `clang-format` on every touched file and keep the diff clean.
+5. Match the surrounding style by hand (tabs, Allman braces, spaces inside
+   parentheses, `this->` member access) and keep the diff clean.
 6. Use `clang -fsyntax-only` as a rough check when it is feasible; it
    generally cannot resolve the MSVC/Windows headers, so treat MSVC as
    authoritative.
-7. Run `clang-tidy` where useful; it is advisory. Its naming options are
-   partly stale (they expect a trailing underscore member suffix and
-   `platform`/`protection` paths) — follow the existing code, not a
-   conflicting tidy suggestion.
-8. Cross-check anything version-sensitive against `cspatterns.dev`,
+7. Cross-check anything version-sensitive against `cspatterns.dev`,
    `cs2-sdk.com` and `GameTracking-CS2`.
 
 ## 9. Git workflow
