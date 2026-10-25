@@ -4,13 +4,16 @@
 #include <vector>
 #include <utilities/memory/memory.hpp>
 #include <utilities/addresses/addresses.hpp>
+#include <utilities/fnv1a.hpp>
 #include <utilities/logging/logging.hpp>
+#include <core/systems/systems.hpp>
 #include <core/features/features.hpp>
 #include <core/settings.hpp>
 #include <signatures/game_addresses.hpp>
 namespace features::changer {
 	namespace detail {
 		constexpr std::size_t player_inventory_offset{ 0x528D0 };
+		constexpr std::size_t view_list_offset{ 0x228 };
 		constexpr std::size_t item_list_offset{ 0x4D0 };
 		constexpr std::size_t item_list_cached_offset{ 0x4CF };
 		constexpr std::size_t maximum_views{ 8192 };
@@ -58,6 +61,12 @@ namespace features::changer {
 			auto wear{ std::uint32_t{} };
 			std::memcpy( &wear, &skin.wear, sizeof( wear ) );
 			mix( wear );
+			const auto custom_name = detail::copy_custom_name( skin.custom_name );
+			mix( static_cast< std::uint32_t >( custom_name.size( ) ) );
+			for ( const auto character : custom_name )
+			{
+				mix( static_cast< std::uint8_t >( character ) );
+			}
 		}
 		return hash;
 	}
@@ -96,7 +105,7 @@ namespace features::changer {
 			return false;
 		}
 	}
-	std::uint64_t inventory::ensure_view( const spec& s )
+	std::uintptr_t inventory::ensure_view( const spec& s )
 	{
 		if ( s.def_index <= 0 )
 		{
@@ -130,15 +139,36 @@ namespace features::changer {
 		{
 			return 0;
 		}
+		const auto stored_id = memory::read<std::uint64_t>( view + SCHEMA( "C_EconItemView", "m_iItemID"_hash ) );
+		const auto stored_high = memory::read<std::uint32_t>( view + SCHEMA( "C_EconItemView", "m_iItemIDHigh"_hash ) );
+		const auto stored_low = memory::read<std::uint32_t>( view + SCHEMA( "C_EconItemView", "m_iItemIDLow"_hash ) );
+		const auto current_id = stored_id ? stored_id : ( static_cast< std::uint64_t >( stored_high ) << 32 ) | stored_low;
+		if ( current_id != 0 && current_id < detail::fake_item_id_base )
+		{
+			return view;
+		}
+		memory::write<std::uint64_t>( view + SCHEMA( "C_EconItemView", "m_iItemID"_hash ), id );
+		memory::write<std::uint32_t>( view + SCHEMA( "C_EconItemView", "m_iItemIDHigh"_hash ), static_cast< std::uint32_t >( id >> 32 ) );
+		memory::write<std::uint32_t>( view + SCHEMA( "C_EconItemView", "m_iItemIDLow"_hash ), static_cast< std::uint32_t >( id ) );
+		detail::set_custom_name( view, s.custom_name );
+		memory::write<bool>( view + SCHEMA( "C_EconItemView", "m_bDisallowSOC"_hash ), true );
 		if ( s.paint_kit_id != 0 )
 		{
 			const auto set_attribute = PATTERN( patterns::econ_item_view_set_attribute );
-			memory::call<void>( set_attribute, view, "set item texture prefab", static_cast< float >( s.paint_kit_id ) );
-			memory::call<void>( set_attribute, view, "set item texture seed", static_cast< float >( s.seed ) );
-			memory::call<void>( set_attribute, view, "set item texture wear", s.wear > 0.0f ? s.wear : 0.01f );
-			memory::call<void>( PATTERN( patterns::econ_item_view_invalidate_description ), view );
+			memory::write<bool>( view + SCHEMA( "C_EconItemView", "m_bRestoreCustomMaterialAfterPrecache"_hash ), true );
+			if ( set_attribute )
+			{
+				memory::call<void>( set_attribute, view, "set item texture prefab", static_cast< float >( s.paint_kit_id ) );
+				memory::call<void>( set_attribute, view, "set item texture seed", static_cast< float >( s.seed ) );
+				memory::call<void>( set_attribute, view, "set item texture wear", s.wear > 0.0f ? s.wear : 0.01f );
+			}
 		}
-		return id;
+		const auto invalidate = PATTERN( patterns::econ_item_view_invalidate_description );
+		if ( invalidate )
+		{
+			memory::call<void>( invalidate, view );
+		}
+		return view;
 	}
 	void inventory::rebuild( )
 	{
@@ -155,22 +185,20 @@ namespace features::changer {
 		this->m_manager = manager;
 		this->m_player_inventory = player_inventory;
 		auto& econ = g_econ_item_system;
-		std::vector<entry> views{};
 		std::vector<spec> specs{};
-		views.reserve( 512 );
-		specs.reserve( 64 );
+		specs.reserve( 512 );
 		std::unordered_set<std::uint64_t> seen{};
 		seen.reserve( 512 );
-		const auto total = [ & ]( )
+		const auto full = [ & ]( )
 			{
-				return views.size( ) + specs.size( );
+				return specs.size( ) >= detail::maximum_views;
 			};
 		if ( settings::g_changer.m_inventory.configured.value )
 		{
 			for ( const auto& [ def_index, skin ] : settings::g_changer.skins.data )
 			{
 				const auto* def = econ.find_def( def_index );
-				if ( !def || total( ) >= detail::maximum_views )
+				if ( !def || full( ) )
 				{
 					continue;
 				}
@@ -187,12 +215,12 @@ namespace features::changer {
 				{
 					continue;
 				}
-				specs.push_back( { def->def_index, skin.paint_kit_id, skin.seed, skin.wear } );
+				specs.push_back( { def->def_index, skin.paint_kit_id, skin.seed, skin.wear, detail::copy_custom_name( skin.custom_name ) } );
 			}
 			for ( const auto def_index : { settings::g_changer.agents.ct_def, settings::g_changer.agents.t_def } )
 			{
 				const auto* def = econ.find_def( def_index );
-				if ( !def || def->category != econ_item_system::item_category::agent || total( ) >= detail::maximum_views )
+				if ( !def || def->category != econ_item_system::item_category::agent || full( ) )
 				{
 					continue;
 				}
@@ -206,7 +234,7 @@ namespace features::changer {
 		}
 		for ( const auto& def : econ.item_defs( ) )
 		{
-			if ( !this->wants( def ) || def.def_index <= 0 || total( ) >= detail::maximum_views )
+			if ( !this->wants( def ) || def.def_index <= 0 || full( ) )
 			{
 				continue;
 			}
@@ -215,14 +243,13 @@ namespace features::changer {
 			{
 				continue;
 			}
-			views.push_back( { id } );
+			specs.push_back( { def.def_index, 0, 0, 0.0f } );
 		}
 #if defined( DEV )
-		const auto count = views.size( ) + specs.size( );
+		const auto count = specs.size( );
 #endif
 		{
 			std::lock_guard lock( this->m_mutex );
-			this->m_views.swap( views );
 			this->m_specs.swap( specs );
 		}
 #if defined( DEV )
@@ -276,14 +303,13 @@ namespace features::changer {
 		{
 			return;
 		}
-		std::vector<entry> views{};
 		std::vector<spec> specs{};
 		{
 			std::lock_guard lock( this->m_mutex );
-			views = this->m_views;
 			specs = this->m_specs;
 		}
-		if ( views.empty( ) && specs.empty( ) )
+		const auto replace = settings::g_changer.m_inventory.replace.value;
+		if ( specs.empty( ) && !replace )
 		{
 			return;
 		}
@@ -292,40 +318,58 @@ namespace features::changer {
 		{
 			return;
 		}
-		std::unordered_set<std::uint64_t> existing{};
-		if ( settings::g_changer.m_inventory.replace.value )
+		std::unordered_set<std::uintptr_t> existing_views{};
+		std::unordered_set<std::uint64_t> existing_ids{};
+		if ( replace )
 		{
+			memory::write<int>( panel + detail::view_list_offset, 0 );
 			memory::write<int>( panel + detail::item_list_offset, 0 );
 		}
 		else
 		{
-			const auto count = memory::read<int>( panel + detail::item_list_offset );
-			const auto array = memory::read<std::uintptr_t>( panel + detail::item_list_offset + 8 );
-			if ( count > 0 && count < 1000000 && array )
+			const auto view_count = memory::read<int>( panel + detail::view_list_offset );
+			const auto view_array = memory::read<std::uintptr_t>( panel + detail::view_list_offset + 8 );
+			if ( view_count > 0 && view_count < 1000000 && view_array )
 			{
-				existing.reserve( static_cast< std::size_t >( count ) );
-				for ( auto i = 0; i < count; i++ )
+				existing_views.reserve( static_cast< std::size_t >( view_count ) );
+				for ( auto i = 0; i < view_count; i++ )
 				{
-					existing.insert( memory::read<std::uint64_t>( array + static_cast< std::size_t >( i ) * 8 ) );
+					existing_views.insert( memory::read<std::uintptr_t>( view_array + static_cast< std::size_t >( i ) * 8 ) );
+				}
+			}
+			const auto id_count = memory::read<int>( panel + detail::item_list_offset );
+			const auto id_array = memory::read<std::uintptr_t>( panel + detail::item_list_offset + 8 );
+			if ( id_count > 0 && id_count < 1000000 && id_array )
+			{
+				existing_ids.reserve( static_cast< std::size_t >( id_count ) );
+				for ( auto i = 0; i < id_count; i++ )
+				{
+					existing_ids.insert( memory::read<std::uint64_t>( id_array + static_cast< std::size_t >( i ) * 8 ) );
 				}
 			}
 		}
-		std::unordered_set<std::uint64_t> written{};
-		const auto append = [ & ]( std::uint64_t id )
-			{
-				if ( !id || existing.contains( id ) || !written.insert( id ).second )
-				{
-					return;
-				}
-				memory::call<void>( add, panel + detail::item_list_offset, &id );
-			};
+		std::unordered_set<std::uintptr_t> written_views{};
+		written_views.reserve( specs.size( ) );
 		for ( const auto& s : specs )
 		{
-			append( this->ensure_view( s ) );
-		}
-		for ( const auto& v : views )
-		{
-			append( v.id );
+			auto view = this->ensure_view( s );
+			if ( !view || existing_views.contains( view ) || !written_views.insert( view ).second )
+			{
+				continue;
+			}
+			memory::call<void>( add, panel + detail::view_list_offset, &view );
+			const auto high = memory::read<std::uint32_t>( view + SCHEMA( "C_EconItemView", "m_iItemIDHigh"_hash ) );
+			const auto low = memory::read<std::uint32_t>( view + SCHEMA( "C_EconItemView", "m_iItemIDLow"_hash ) );
+			auto id = ( static_cast< std::uint64_t >( high ) << 32 ) | low;
+			if ( !id )
+			{
+				id = detail::make_fake_item_id( s.def_index, s.paint_kit_id );
+			}
+			if ( existing_ids.contains( id ) )
+			{
+				continue;
+			}
+			memory::call<void>( add, panel + detail::item_list_offset, &id );
 		}
 	}
 }

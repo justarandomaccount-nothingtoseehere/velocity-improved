@@ -866,13 +866,22 @@ namespace features::changer {
 		{
 			return def->image_inventory;
 		}
-		std::string_view base = def->image_inventory;
+		std::string base = def->name;
 		if ( base.empty( ) )
 		{
-			base = def->name;
+			std::string_view image = def->image_inventory;
+			const auto slash = image.find_last_of( '/' );
+			base = std::string( slash == std::string_view::npos ? image : image.substr( slash + 1 ) );
+			constexpr std::string_view light_suffix{ "_light" };
+			if ( base.ends_with( light_suffix ) )
+			{
+				base.resize( base.size( ) - light_suffix.size( ) );
+			}
 		}
-		auto slash = base.find_last_of( '/' );
-		std::string_view stem = ( slash == std::string_view::npos ) ? base : base.substr( slash + 1 );
-		return std::string( "econ/default_generated/" ) + std::string( stem ) + "_" + pk->name + "_light";
+		if ( base.empty( ) )
+		{
+			return def->image_inventory;
+		}
+		return std::string( "econ/default_generated/" ) + base + "_" + pk->name + "_light";
 	}
 }

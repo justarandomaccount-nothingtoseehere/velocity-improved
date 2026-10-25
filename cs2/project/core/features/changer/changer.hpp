@@ -1,9 +1,40 @@
 #pragma once
+#include <array>
 #include <atomic>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <mutex>
+#include <core/settings.hpp>
 #include <core/systems/systems.hpp>
+#include <utilities/memory/memory.hpp>
 namespace features::changer {
+	namespace detail {
+		constexpr std::size_t custom_name_capacity{ 161 };
+		inline std::string copy_custom_name( const std::string& name )
+		{
+			std::lock_guard lock( settings::changer::custom_name_mutex );
+			return name;
+		}
+		inline void write_custom_name( std::string& target, const std::string& name )
+		{
+			std::lock_guard lock( settings::changer::custom_name_mutex );
+			target = name;
+		}
+		inline void set_custom_name( std::uintptr_t view, const std::string& name )
+		{
+			if ( !view )
+			{
+				return;
+			}
+			std::array<char, custom_name_capacity> buffer{};
+			const auto length = name.size( ) < buffer.size( ) ? name.size( ) : buffer.size( ) - 1;
+			std::memcpy( buffer.data( ), name.data( ), length );
+			memory::write(
+				view + SCHEMA( "C_EconItemView", "m_szCustomName"_hash ),
+				buffer );
+		}
+	}
 	class econ_item_system
 	{
 	public:
@@ -145,26 +176,22 @@ namespace features::changer {
 	class inventory
 	{
 	public:
-		struct entry
-		{
-			std::uint64_t id{};
-		};
 		struct spec
 		{
 			std::int16_t def_index{};
 			int paint_kit_id{};
 			int seed{};
 			float wear{};
+			std::string custom_name{};
 		};
 		void on_frame_stage_notify( );
 		void on_refresh( std::uintptr_t panel );
 		[[nodiscard]] bool prepare_refresh( std::uintptr_t panel );
 	private:
 		void rebuild( );
-		[[nodiscard]] std::uint64_t ensure_view( const spec& s );
+		[[nodiscard]] std::uintptr_t ensure_view( const spec& s );
 		[[nodiscard]] bool wants( const econ_item_system::item_def& def ) const;
 		[[nodiscard]] std::uint32_t state_hash( ) const;
-		std::vector<entry> m_views{};
 		std::vector<spec> m_specs{};
 		std::uintptr_t m_manager{};
 		std::uintptr_t m_player_inventory{};
@@ -236,6 +263,7 @@ namespace features::changer {
 		std::uint32_t m_last_active_handle{};
 		std::uintptr_t m_tracked_pawn{};
 		std::unordered_map<std::uint32_t, int> m_applied_weapons{};
+		std::unordered_map<std::uint32_t, std::string> m_applied_names{};
 		std::uintptr_t m_pending_hud_iv{};
 		std::chrono::steady_clock::time_point m_hud_clear_time{};
 	};
@@ -251,10 +279,12 @@ namespace features::changer {
 			std::uint32_t id_low{};
 			std::uint32_t account_id{};
 			bool initialized{};
+			bool disallow_soc{};
 			int paint_kit{};
 			int seed{};
 			float wear{};
 			int stattrak{};
+			std::string custom_name{};
 			bool captured{};
 		};
 		void capture_original( std::uintptr_t weapon, std::uintptr_t iv );
@@ -271,6 +301,7 @@ namespace features::changer {
 		std::uint32_t m_last_active_handle{};
 		std::uintptr_t m_tracked_pawn{};
 		bool m_overridden{};
+		std::string m_applied_name{};
 		std::uintptr_t m_pending_hud_iv{};
 		std::chrono::steady_clock::time_point m_hud_clear_time{};
 	};

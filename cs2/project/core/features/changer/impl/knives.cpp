@@ -84,6 +84,7 @@ namespace features::changer {
 		{
 			this->m_original = {};
 			this->m_overridden = false;
+			this->m_applied_name.clear( );
 			this->m_last_active_handle = 0;
 			this->m_tracked_pawn = local.pawn;
 		}
@@ -115,10 +116,12 @@ namespace features::changer {
 			{
 				this->capture_original( weapon, iv );
 			}
+			const auto custom_name = detail::copy_custom_name( selected_skin->custom_name );
 			const auto target_token = detail::make_subclass_token( selected_knife_def->def_index );
 			const auto current_subclass = memory::read<std::uint32_t>( weapon + SCHEMA( "C_BaseEntity", "m_nSubclassID"_hash ) );
 			const auto current_pk = memory::read<int>( weapon + SCHEMA( "C_EconEntity", "m_nFallbackPaintKit"_hash ) );
-			if ( current_subclass == target_token && current_pk == selected_skin->paint_kit_id )
+			const auto disallow_soc = memory::read<bool>( iv + SCHEMA( "C_EconItemView", "m_bDisallowSOC"_hash ) );
+			if ( current_subclass == target_token && current_pk == selected_skin->paint_kit_id && this->m_applied_name == custom_name && disallow_soc )
 			{
 				break;
 			}
@@ -155,10 +158,12 @@ namespace features::changer {
 		this->m_original.id_low = memory::read<std::uint32_t>( iv + SCHEMA( "C_EconItemView", "m_iItemIDLow"_hash ) );
 		this->m_original.account_id = memory::read<std::uint32_t>( iv + SCHEMA( "C_EconItemView", "m_iAccountID"_hash ) );
 		this->m_original.initialized = memory::read<bool>( iv + SCHEMA( "C_EconItemView", "m_bInitialized"_hash ) );
+		this->m_original.disallow_soc = memory::read<bool>( iv + SCHEMA( "C_EconItemView", "m_bDisallowSOC"_hash ) );
 		this->m_original.paint_kit = memory::read<int>( weapon + SCHEMA( "C_EconEntity", "m_nFallbackPaintKit"_hash ) );
 		this->m_original.seed = memory::read<int>( weapon + SCHEMA( "C_EconEntity", "m_nFallbackSeed"_hash ) );
 		this->m_original.wear = memory::read<float>( weapon + SCHEMA( "C_EconEntity", "m_flFallbackWear"_hash ) );
 		this->m_original.stattrak = memory::read<int>( weapon + SCHEMA( "C_EconEntity", "m_nFallbackStatTrak"_hash ) );
+		this->m_original.custom_name = memory::read_string( iv + SCHEMA( "C_EconItemView", "m_szCustomName"_hash ), detail::custom_name_capacity - 1 );
 		this->m_original.captured = true;
 	}
 	void knives::apply( std::uintptr_t weapon, std::uintptr_t iv, const econ_item_system::item_def* def, const settings::changer::applied_skin* skin, std::uint32_t account_id, std::uintptr_t active_weapon, std::uintptr_t pawn )
@@ -169,15 +174,19 @@ namespace features::changer {
 		memory::write<std::uint32_t>( iv + SCHEMA( "C_EconItemView", "m_iItemIDLow"_hash ), 0x10 );
 		memory::write<std::uint32_t>( iv + SCHEMA( "C_EconItemView", "m_iAccountID"_hash ), account_id );
 		memory::write<bool>( iv + SCHEMA( "C_EconItemView", "m_bInitialized"_hash ), true );
+		memory::write<bool>( iv + SCHEMA( "C_EconItemView", "m_bDisallowSOC"_hash ), true );
 		memory::write<int>( weapon + SCHEMA( "C_EconEntity", "m_nFallbackPaintKit"_hash ), skin->paint_kit_id );
 		memory::write<int>( weapon + SCHEMA( "C_EconEntity", "m_nFallbackSeed"_hash ), skin->seed );
 		memory::write<float>( weapon + SCHEMA( "C_EconEntity", "m_flFallbackWear"_hash ), skin->wear );
 		memory::write<int>( weapon + SCHEMA( "C_EconEntity", "m_nFallbackStatTrak"_hash ), skin->stattrak ? 0 : -1 );
+		const auto custom_name = detail::copy_custom_name( skin->custom_name );
+		detail::set_custom_name( iv, custom_name );
 		const auto pk = g_econ_item_system.find_paint_kit( skin->paint_kit_id );
 		this->update_model( weapon, iv, static_cast< std::uint16_t >( def->def_index ) );
 		this->rebuild_paint( weapon, active_weapon, pawn, pk );
 		this->schedule_hud_clear( iv );
 		this->m_overridden = true;
+		this->m_applied_name = custom_name;
 	}
 	void knives::restore( std::uintptr_t weapon, std::uintptr_t iv, std::uintptr_t active_weapon, std::uintptr_t pawn )
 	{
@@ -191,15 +200,18 @@ namespace features::changer {
 		memory::write<std::uint32_t>( iv + SCHEMA( "C_EconItemView", "m_iItemIDLow"_hash ), this->m_original.id_low );
 		memory::write<std::uint32_t>( iv + SCHEMA( "C_EconItemView", "m_iAccountID"_hash ), this->m_original.account_id );
 		memory::write<bool>( iv + SCHEMA( "C_EconItemView", "m_bInitialized"_hash ), this->m_original.initialized );
+		memory::write<bool>( iv + SCHEMA( "C_EconItemView", "m_bDisallowSOC"_hash ), this->m_original.disallow_soc );
 		memory::write<int>( weapon + SCHEMA( "C_EconEntity", "m_nFallbackPaintKit"_hash ), this->m_original.paint_kit );
 		memory::write<int>( weapon + SCHEMA( "C_EconEntity", "m_nFallbackSeed"_hash ), this->m_original.seed );
 		memory::write<float>( weapon + SCHEMA( "C_EconEntity", "m_flFallbackWear"_hash ), this->m_original.wear );
 		memory::write<int>( weapon + SCHEMA( "C_EconEntity", "m_nFallbackStatTrak"_hash ), this->m_original.stattrak );
+		detail::set_custom_name( iv, this->m_original.custom_name );
 		const auto pk = g_econ_item_system.find_paint_kit( this->m_original.paint_kit );
 		this->update_model( weapon, iv, this->m_original.def_index );
 		this->rebuild_paint( weapon, active_weapon, pawn, pk );
 		this->schedule_hud_clear( iv );
 		this->m_overridden = false;
+		this->m_applied_name.clear( );
 	}
 	void knives::update_model( std::uintptr_t weapon, std::uintptr_t iv, std::uint16_t def_index )
 	{

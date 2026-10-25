@@ -1,4 +1,5 @@
 #pragma once
+#include <mutex>
 #include <external/config.hpp>
 #include <utilities/cstypes.hpp>
 #include <utilities/math/math.hpp>
@@ -1008,12 +1009,14 @@ struct esp
 };
 struct changer
 {
+	static inline std::mutex custom_name_mutex{};
 	struct applied_skin
 	{
 		int paint_kit_id{ };
 		float wear{ 0.01f };
 		int seed{ };
 		bool stattrak{ };
+		std::string custom_name{ };
 		bool operator==( const applied_skin& ) const = default;
 	};
 	struct skin_map_field : config::custom_field
@@ -1021,16 +1024,18 @@ struct changer
 		std::unordered_map<std::int16_t, applied_skin> data{ };
 		nlohmann::json serialize( ) const override
 		{
+			std::lock_guard lock( changer::custom_name_mutex );
 			auto j = nlohmann::json::object( );
 			for ( const auto& [ def, s ] : data )
 			{
 				j[ std::to_string( def ) ] =
-				    nlohmann::json{ { "p", s.paint_kit_id }, { "w", s.wear }, { "s", s.seed }, { "t", s.stattrak } };
+				    nlohmann::json{ { "p", s.paint_kit_id }, { "w", s.wear }, { "s", s.seed }, { "t", s.stattrak }, { "n", s.custom_name } };
 			}
 			return j;
 		}
 		void deserialize( const nlohmann::json& j ) override
 		{
+			std::lock_guard lock( changer::custom_name_mutex );
 			data.clear( );
 			if ( !j.is_object( ) )
 			{
@@ -1046,6 +1051,7 @@ struct changer
 					s.wear = it.value( ).value( "w", 0.01f );
 					s.seed = it.value( ).value( "s", 0 );
 					s.stattrak = it.value( ).value( "t", false );
+					s.custom_name = it.value( ).value( "n", std::string{ } );
 				}
 				catch ( ... )
 				{

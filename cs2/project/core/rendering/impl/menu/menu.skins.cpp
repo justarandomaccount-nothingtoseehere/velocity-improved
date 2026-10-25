@@ -272,6 +272,102 @@ namespace rendering {
 			std::string m_buf{};
 			float m_open_anim{};
 		};
+		class name_sub_overlay : public xui::overlay
+		{
+		public:
+			name_sub_overlay( std::uintptr_t id, const xui::rect& anchor, std::int16_t def ) : overlay{ id, anchor }, m_def{ def }
+			{
+				const auto it = skin_map( ).find( def );
+				if ( it != skin_map( ).end( ) )
+				{
+					this->m_buf = features::changer::detail::copy_custom_name( it->second.custom_name );
+				}
+			}
+			[[nodiscard]] bool hit_test( float x, float y ) const override
+			{
+				return this->get_popup( ).contains( x, y );
+			}
+			bool process_input( const xui::input_state& input ) override
+			{
+				if ( this->m_closing )
+				{
+					return false;
+				}
+				const auto popup = this->get_popup( );
+				if ( input.mouse_clicked && !popup.contains( input.mouse_x, input.mouse_y ) )
+				{
+					this->m_closing = true;
+					return false;
+				}
+				return popup.contains( input.mouse_x, input.mouse_y );
+			}
+			void render( const xui::style& style, const xui::input_state& ) override
+			{
+				const auto dt = xdraw::delta_time( );
+				const auto popup = this->get_popup( );
+				const auto speed = this->m_closing ? 18.0f : 16.0f;
+				const auto target = this->m_closing ? 0.0f : 1.0f;
+				this->m_open_anim += ( target - this->m_open_anim ) * std::min( speed * dt, 1.0f );
+				if ( this->m_open_anim < 0.01f && this->m_closing )
+				{
+					this->m_closed = true;
+					return;
+				}
+				const auto et = xui::ease::out_cubic( this->m_open_anim );
+				const auto alpha_mult = et;
+				const auto animated_h = popup.h * et;
+				const auto pr = style.popup_rounding;
+				auto& dl = xdraw::get( xdraw::layer::top );
+				auto bg = style.popup_bg;
+				bg.a = static_cast< std::uint8_t >( bg.a * alpha_mult );
+				auto border = xui::lighten( style.popup_border, 1.1f );
+				border.a = static_cast< std::uint8_t >( border.a * alpha_mult );
+				if ( !this->m_closing )
+				{
+					dl.rect_filled_blurred( popup.x, popup.y, popup.w, animated_h, xdraw::corner_radius{ pr } );
+				}
+				dl.rect_filled( popup.x, popup.y, popup.w, animated_h, bg, xdraw::corner_radius{ pr } );
+				dl.rect( popup.x, popup.y, popup.w, animated_h, border, xdraw::corner_radius{ pr } );
+				if ( et < 0.2f )
+				{
+					return;
+				}
+				xui::draw::push_layer( xdraw::layer::top );
+				dl.push_clip( popup.x, popup.y, popup.w, animated_h );
+				xui::window_state ws{};
+				ws.title = "##name_sub";
+				ws.bounds = popup;
+				ws.cursor_x = style.window_pad_x;
+				ws.cursor_y = style.window_pad_y;
+				ws.is_child = true;
+				auto& c = xui::ctx( );
+				c.windows.push_back( std::move( ws ) );
+				xui::push_id( this->m_id );
+				const auto prev_inside = c.inside_overlay;
+				c.inside_overlay = this->m_id;
+				if ( xui::text_input( "##name_input", this->m_buf, 160, "custom name..." ) )
+				{
+					const auto it = skin_map( ).find( this->m_def );
+					if ( it != skin_map( ).end( ) )
+					{
+						features::changer::detail::write_custom_name( it->second.custom_name, this->m_buf );
+					}
+				}
+				c.inside_overlay = prev_inside;
+				xui::pop_id( );
+				c.windows.pop_back( );
+				dl.pop_clip( );
+				xui::draw::pop_layer( );
+			}
+		private:
+			[[nodiscard]] xui::rect get_popup( ) const
+			{
+				return { this->m_anchor.x, this->m_anchor.y, 240.0f, 50.0f };
+			}
+			std::int16_t m_def{};
+			std::string m_buf{};
+			float m_open_anim{};
+		};
 		class skin_context_overlay : public xui::overlay
 		{
 		public:
@@ -352,6 +448,16 @@ namespace rendering {
 						}
 					}
 					else if ( i == 4 )
+					{
+						if ( this->m_sub_id != xui::null_id )
+						{
+							xui::overlays::close( this->m_sub_id );
+						}
+						const auto sub_anchor = xui::rect{ popup.right( ) + 4.0f, ir.y, 0.0f, 0.0f };
+						this->m_sub_id = this->m_id ^ 0x77733ull;
+						xui::overlays::add( std::make_unique<name_sub_overlay>( this->m_sub_id, sub_anchor, this->m_def ) );
+					}
+					else if ( i == 5 )
 					{
 						skin_map( ).erase( this->m_def );
 						this->m_closing = true;
@@ -451,7 +557,7 @@ namespace rendering {
 						dl.text( ir.x + 8.0f, ir.y + ( k_item_h - th ) * 0.5f + slide, "remove skin", col );
 						continue;
 					}
-					static constexpr const char* labels[ ]{ "", "stattrak", "wear", "seed" };
+					static constexpr const char* labels[ ]{ "", "stattrak", "wear", "seed", "name" };
 					std::string value;
 					if ( it != skin_map( ).end( ) )
 					{
@@ -467,6 +573,11 @@ namespace rendering {
 						{
 							value = std::to_string( it->second.seed );
 						}
+						else if ( i == 4 )
+						{
+							const auto custom_name = features::changer::detail::copy_custom_name( it->second.custom_name );
+							value = custom_name.empty( ) ? "-" : custom_name;
+						}
 					}
 					else
 					{
@@ -479,13 +590,14 @@ namespace rendering {
 					val_col.a = static_cast< std::uint8_t >( val_col.a * item_alpha );
 					const auto [lw, lh] = xdraw::measure_text( labels[ i ] );
 					dl.text( ir.x + 8.0f, ir.y + ( k_item_h - lh ) * 0.5f + slide, labels[ i ], label_col );
-					const auto [vw, vh] = xdraw::measure_text( value );
-					dl.text( ir.right( ) - vw - 8.0f, ir.y + ( k_item_h - vh ) * 0.5f + slide, value, val_col );
+					const auto value_text = xui::truncate( value, ir.w - 80.0f );
+					const auto [vw, vh] = xdraw::measure_text( value_text );
+					dl.text( ir.right( ) - vw - 8.0f, ir.y + ( k_item_h - vh ) * 0.5f + slide, value_text, val_col );
 				}
 				dl.pop_clip( );
 			}
 		private:
-			static constexpr auto k_item_count{ 5 };
+			static constexpr auto k_item_count{ 6 };
 			static constexpr auto k_item_h{ 24.0f };
 			static constexpr auto k_pad{ 4.0f };
 			static constexpr auto k_popup_w{ 200.0f };
@@ -503,8 +615,8 @@ namespace rendering {
 			std::string m_skin_name{};
 			std::uintptr_t m_sub_id{ xui::null_id };
 			float m_open_anim{};
-			std::array<float, 5> m_hover_anims{};
-			std::array<float, 5> m_item_anims{};
+			std::array<float, 6> m_hover_anims{};
+			std::array<float, 6> m_item_anims{};
 		};
 		static inline void draw_agent_team_card( const xui::rect& card, int team, float fade_alpha )
 		{
@@ -667,7 +779,9 @@ namespace rendering {
 			{
 				auto skin_col = rarity_col;
 				skin_col.a = static_cast< std::uint8_t >( 200.0f * fade_alpha );
-				const auto skin_trunc = xui::truncate( pk->localized_name, card.w - 12.0f );
+				const auto custom_name = features::changer::detail::copy_custom_name( applied_it->second.custom_name );
+				const auto& skin_label = custom_name.empty( ) ? pk->localized_name : custom_name;
+				const auto skin_trunc = xui::truncate( skin_label, card.w - 12.0f );
 				const auto [sw, sh] = xdraw::measure_text( skin_trunc );
 				dl.text( std::floor( card.x + ( card.w - sw ) * 0.5f ), std::floor( name_y ), skin_trunc, skin_col );
 			}

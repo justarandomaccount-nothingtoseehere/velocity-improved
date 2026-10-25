@@ -33,6 +33,7 @@ namespace features::changer {
 		if ( this->m_tracked_pawn != local.pawn )
 		{
 			this->m_applied_weapons.clear( );
+			this->m_applied_names.clear( );
 			this->m_last_active_handle = 0;
 			this->m_tracked_pawn = local.pawn;
 		}
@@ -57,8 +58,12 @@ namespace features::changer {
 				continue;
 			}
 			const auto& skin = skin_it->second;
+			const auto custom_name = detail::copy_custom_name( skin.custom_name );
 			const auto applied_it = this->m_applied_weapons.find( handle );
-			if ( applied_it != this->m_applied_weapons.end( ) && applied_it->second == skin.paint_kit_id )
+			const auto name_it = this->m_applied_names.find( handle );
+			const auto disallow_soc = memory::read<bool>( iv + SCHEMA( "C_EconItemView", "m_bDisallowSOC"_hash ) );
+			if ( applied_it != this->m_applied_weapons.end( ) && applied_it->second == skin.paint_kit_id &&
+				name_it != this->m_applied_names.end( ) && name_it->second == custom_name && disallow_soc )
 			{
 				continue;
 			}
@@ -68,6 +73,7 @@ namespace features::changer {
 			}
 			this->apply( weapon, iv, handle, active_handle, local.pawn, &skin, account_id );
 			this->m_applied_weapons[ handle ] = skin.paint_kit_id;
+			this->m_applied_names[ handle ] = custom_name;
 		}
 		if ( active_handle != this->m_last_active_handle )
 		{
@@ -93,10 +99,12 @@ namespace features::changer {
 		memory::write<std::uint32_t>( iv + SCHEMA( "C_EconItemView", "m_iItemIDLow"_hash ), 0x10 );
 		memory::write<std::uint32_t>( iv + SCHEMA( "C_EconItemView", "m_iAccountID"_hash ), account_id );
 		memory::write<bool>( iv + SCHEMA( "C_EconItemView", "m_bInitialized"_hash ), true );
+		memory::write<bool>( iv + SCHEMA( "C_EconItemView", "m_bDisallowSOC"_hash ), true );
 		memory::write<int>( weapon + SCHEMA( "C_EconEntity", "m_nFallbackPaintKit"_hash ), skin->paint_kit_id );
 		memory::write<int>( weapon + SCHEMA( "C_EconEntity", "m_nFallbackSeed"_hash ), skin->seed );
 		memory::write<float>( weapon + SCHEMA( "C_EconEntity", "m_flFallbackWear"_hash ), skin->wear );
 		memory::write<int>( weapon + SCHEMA( "C_EconEntity", "m_nFallbackStatTrak"_hash ), skin->stattrak ? 0 : -1 );
+		detail::set_custom_name( iv, detail::copy_custom_name( skin->custom_name ) );
 		const auto pk = g_econ_item_system.find_paint_kit( skin->paint_kit_id );
 		this->rebuild_paint( weapon, handle, active_handle, pawn, pk );
 		this->schedule_hud_clear( iv );
