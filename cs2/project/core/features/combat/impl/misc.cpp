@@ -6,40 +6,94 @@
 #include <utilities/addresses/addresses.hpp>
 #include <utilities/fnv1a.hpp>
 #include <utilities/logging/logging.hpp>
+#include <utilities/random/random.hpp>
 #include <core/systems/systems.hpp>
 #include <core/features/features.hpp>
 #include <signatures/game_addresses.hpp>
 namespace features::combat {
+	namespace {
+		constexpr int jitter_step_count( settings::combat::antiaim::jitter_mode mode )
+		{
+			switch ( mode )
+			{
+			case settings::combat::antiaim::jitter_mode::two_way:
+				return 2;
+			case settings::combat::antiaim::jitter_mode::three_way:
+				return 3;
+			case settings::combat::antiaim::jitter_mode::five_way:
+				return 5;
+			case settings::combat::antiaim::jitter_mode::eight_way:
+				return 8;
+			default:
+				return 0;
+			}
+		}
+		float jitter_offset( settings::combat::antiaim::jitter_mode mode, float angle, int command_number, int ticks, bool center )
+		{
+			const auto steps = jitter_step_count( mode );
+			if ( steps < 2 )
+			{
+				return 0.0f;
+			}
+			const auto hold = std::max( ticks, 1 );
+			const auto step = ( command_number / hold ) % steps;
+			if ( steps == 2 )
+			{
+				return step == 0 ? -angle : angle;
+			}
+			const auto t = static_cast< float >( step ) / static_cast< float >( steps - 1 );
+			return ( center ? ( t * 2.0f - 1.0f ) : t ) * angle;
+		}
+		float triangle_wave( float phase, float period )
+		{
+			auto value = std::fmod( phase, period );
+			if ( value < 0.0f )
+			{
+				value += period;
+			}
+			const auto half = period * 0.5f;
+			return value > half ? period - value : value;
+		}
+	}
 	void misc::antiaim::on_create_move( systems::input::usercmd* cmd )
 	{
 		this->m_antiaim_active = false;
-		if ( !settings::g_combat.m_antiaim.enabled.value )
+		auto& cfg = settings::g_combat.m_antiaim;
+		if ( !cfg.enabled.value || !cmd )
 		{
 			return;
 		}
-		if ( systems::g_local.is_in_cinematic( ) || systems::g_local.is_in_time_freeze( ) )
+		if ( systems::g_local.is_in_cinematic( ) )
 		{
 			return;
 		}
-		if ( settings::g_combat.m_antiaim.manual_left.value && settings::g_combat.m_antiaim.manual_right.value )
+		if ( cfg.disablers[ 0 ] && systems::g_local.is_in_time_freeze( ) )
 		{
-			settings::g_combat.m_antiaim.manual_right.value = false;
-			settings::g_combat.m_antiaim.manual_right.bind.active = false;
+			return;
 		}
-		if ( settings::g_combat.m_antiaim.manual_left.value )
+		if ( cfg.manual_forward.value )
 		{
-			this->m_yaw_side = -1;
+			cfg.manual_left.value = false;
+			cfg.manual_left.bind.active = false;
+			cfg.manual_right.value = false;
+			cfg.manual_right.bind.active = false;
 		}
-		else if ( settings::g_combat.m_antiaim.manual_right.value )
+		else if ( cfg.manual_left.value && cfg.manual_right.value )
 		{
-			this->m_yaw_side = 1;
+			cfg.manual_right.value = false;
+			cfg.manual_right.bind.active = false;
 		}
-		else
-		{
-			this->m_yaw_side = 0;
-		}
+		this->m_yaw_side = cfg.manual_left.value ? -1 : ( cfg.manual_right.value ? 1 : 0 );
 		const auto local = systems::g_local.get( );
+		if ( !local.is_alive || !local.pawn )
+		{
+			return;
+		}
 		const auto base = cmd->csgo_user_cmd.mutable_base( );
+		if ( !base )
+		{
+			return;
+		}
 		const auto view_angles = systems::g_input.get_view_angles( );
 		const auto& ctx = g_shared.ctx( );
 		if ( cmd->buttons.value & cstypes::command_buttons::in_use )
@@ -62,11 +116,22 @@ namespace features::combat {
 		{
 			return;
 		}
+		const auto enemy = this->find_nearest_enemy( local );
+		const auto need_backstab = cfg.disablers[ 1 ] || cfg.jitter_disablers[ 2 ];
+		const auto threat = need_backstab ? this->find_backstab_threat( local, view_angles ) : enemy_info{};
+		const auto threat_override = cfg.disablers[ 1 ] ? threat : enemy_info{};
+		const auto on_shot = ( cmd->buttons.value & cstypes::command_buttons::in_attack ) != 0;
+		const auto jitter_disabled = ( cfg.jitter_disablers[ 0 ] && systems::g_local.is_in_time_freeze( ) ) || ( cfg.jitter_disablers[ 1 ] && on_shot ) || ( cfg.jitter_disablers[ 2 ] && threat.valid );
+		const auto jitter_active = cfg.yaw_jitter.value && cfg.yaw_jitter_mode.value != settings::combat::antiaim::jitter_mode::off && !jitter_disabled;
+		const auto spin_active = cfg.yaw_spin.value && !( cfg.freestanding.value && cfg.freestanding_disable_modifiers.value );
+		const auto command_number = static_cast< int >( cmd->command_number );
+		const auto time = ctx.current_time;
 		this->m_old_angles = view_angles;
 		this->m_antiaim_active = true;
 		this->m_modified_angles = this->m_old_angles;
-		this->m_modified_angles.x = this->get_pitch( this->m_old_angles.x );
-		this->m_modified_angles.y = this->get_yaw( this->m_old_angles, local );
+		this->m_modified_angles.x = this->get_pitch( this->m_old_angles.x, command_number, time, jitter_active, spin_active );
+		this->m_modified_angles.y = this->get_yaw( this->m_old_angles, local, enemy, threat_override, cmd, jitter_active );
+		this->m_last_command = cmd->command_number;
 		math::helpers::normalize_angles( this->m_modified_angles );
 		base->mutable_viewangles( )->set_x( this->m_modified_angles.x );
 		base->mutable_viewangles( )->set_y( this->m_modified_angles.y );
@@ -158,51 +223,322 @@ namespace features::combat {
 			draw_list.polyline_gradient( seg, cols, false, thickness );
 		}
 	}
-	float misc::antiaim::get_pitch( float view_pitch )
+	float misc::antiaim::get_pitch( float view_pitch, int command_number, float time, bool yaw_jitter_active, bool yaw_spin_active )
 	{
-		switch ( settings::g_combat.m_antiaim.pitch )
+		auto& cfg = settings::g_combat.m_antiaim;
+		auto pitch = view_pitch;
+		switch ( cfg.pitch.value )
 		{
 		case settings::combat::antiaim::pitch_mode::down:
-			return 89.0f;
+			pitch = 89.0f;
+			break;
 		case settings::combat::antiaim::pitch_mode::up:
-			return -89.0f;
+			pitch = -89.0f;
+			break;
+		case settings::combat::antiaim::pitch_mode::custom:
+			pitch = cfg.pitch_custom;
+			break;
 		default:
-			return view_pitch;
+			break;
 		}
+		pitch += cfg.pitch_offset;
+		if ( cfg.pitch_jitter.value )
+		{
+			pitch += jitter_offset( cfg.pitch_jitter_mode, cfg.pitch_jitter_angle, command_number, cfg.pitch_jitter_ticks, cfg.pitch_jitter_center.value );
+		}
+		if ( cfg.pitch_spin.value )
+		{
+			const auto delta = this->m_last_command != 0 ? std::clamp( static_cast< int >( command_number - this->m_last_command ), 0, 8 ) : 1;
+			this->m_spin_pitch = std::fmod( this->m_spin_pitch + static_cast< float >( cfg.pitch_spin_speed ) * static_cast< float >( delta ), 356.0f );
+			pitch = -89.0f + triangle_wave( this->m_spin_pitch, 356.0f );
+		}
+		else
+		{
+			this->m_spin_pitch = 0.0f;
+		}
+		if ( cfg.pitch_sway.value )
+		{
+			const auto speed = static_cast< float >( cfg.pitch_sway_speed );
+			pitch += std::sinf( time * 2.0f * std::numbers::pi_v<float> * speed ) * static_cast< float >( cfg.pitch_sway_amount );
+		}
+		if ( cfg.pitch_random.value )
+		{
+			const auto amount = static_cast< float >( cfg.pitch_random_amount );
+			pitch += random::floating( -amount, amount );
+		}
+		if ( yaw_jitter_active && cfg.override_pitch_on_jitter.value )
+		{
+			pitch = cfg.override_pitch;
+		}
+		if ( yaw_spin_active && cfg.override_pitch_on_spin.value )
+		{
+			pitch = cfg.override_pitch;
+		}
+		return std::clamp( pitch, -89.0f, 89.0f );
 	}
-	float misc::antiaim::get_yaw( const math::vector3& view_angles, const systems::local::snapshot& local )
+	float misc::antiaim::get_yaw( const math::vector3& view_angles, const systems::local::snapshot& local, const enemy_info& enemy, const enemy_info& threat, systems::input::usercmd* cmd, bool jitter_active )
 	{
-		const auto view_yaw = view_angles.y;
-		const auto base_yaw_offset = 180.0f;
-		auto base_yaw = view_yaw - base_yaw_offset;
-		const auto local_game_scene_node = memory::read<std::uintptr_t>( local.pawn + SCHEMA( "C_BaseEntity", "m_pGameSceneNode"_hash ) );
-		const auto local_origin = memory::read<math::vector3>( local_game_scene_node + SCHEMA( "CGameSceneNode", "m_vecAbsOrigin"_hash ) );
-		const auto eye_pos = local_origin + memory::read<math::vector3>( local.pawn + SCHEMA( "C_BaseModelEntity", "m_vecViewOffset"_hash ) );
-		(void)eye_pos;
-		auto yaw = base_yaw;
-		auto indicator = yaw;
-		if ( this->m_yaw_side == -1 )
+		auto& cfg = settings::g_combat.m_antiaim;
+		const auto origin = this->local_origin( local.pawn );
+		auto yaw = view_angles.y - 180.0f;
+		switch ( cfg.yaw.value )
 		{
-			indicator -= 90.0f;
+		case settings::combat::antiaim::yaw_mode::local_view:
+			yaw = view_angles.y - 180.0f;
+			break;
+		case settings::combat::antiaim::yaw_mode::enemy_view:
+			if ( enemy.valid )
+			{
+				yaw = math::helpers::calculate_angle( origin, enemy.origin ).y;
+			}
+			break;
+		case settings::combat::antiaim::yaw_mode::manual:
+			yaw = cfg.yaw_manual;
+			break;
 		}
-		else if ( this->m_yaw_side == 1 )
+		if ( cfg.manual_forward.value )
 		{
-			indicator += 90.0f;
+			yaw = view_angles.y;
 		}
-		this->m_indicator_yaw = indicator;
-		if ( settings::g_combat.m_antiaim.auto_yaw_adjust.value )
-		{
-			yaw += 33.0f;
-		}
-		if ( this->m_yaw_side == -1 )
+		else if ( this->m_yaw_side < 0 )
 		{
 			yaw -= 90.0f;
 		}
-		else if ( this->m_yaw_side == 1 )
+		else if ( this->m_yaw_side > 0 )
 		{
 			yaw += 90.0f;
 		}
+		if ( threat.valid )
+		{
+			yaw = math::helpers::calculate_angle( origin, threat.origin ).y;
+			this->m_indicator_yaw = math::helpers::normalize_yaw( yaw );
+			return yaw;
+		}
+		const auto modifiers = !( cfg.freestanding.value && cfg.freestanding_disable_modifiers.value );
+		if ( cfg.freestanding.value )
+		{
+			yaw += 90.0f * static_cast< float >( this->choose_freestanding_side( local, view_angles, enemy ) );
+		}
+		if ( cfg.auto_adjust.value == settings::combat::antiaim::auto_adjust_mode::static_offset )
+		{
+			yaw += cfg.auto_adjust_amount;
+		}
+		else if ( cfg.auto_adjust.value == settings::combat::antiaim::auto_adjust_mode::geometry && enemy.valid )
+		{
+			const auto amount = static_cast< float >( cfg.auto_adjust_amount );
+			const auto offset = math::helpers::normalize_yaw( enemy.eye_angles.y - yaw );
+			yaw += std::clamp( offset, -amount, amount );
+		}
+		if ( modifiers )
+		{
+			yaw += cfg.yaw_offset;
+			if ( jitter_active )
+			{
+				yaw += jitter_offset( cfg.yaw_jitter_mode, cfg.yaw_jitter_angle, static_cast< int >( cmd->command_number ), cfg.yaw_jitter_ticks, cfg.yaw_jitter_center.value );
+			}
+			if ( cfg.yaw_spin.value )
+			{
+				const auto delta = this->m_last_command != 0 ? std::clamp( static_cast< int >( cmd->command_number - this->m_last_command ), 0, 8 ) : 1;
+				this->m_spin_yaw = std::fmod( this->m_spin_yaw + static_cast< float >( cfg.yaw_spin_speed ) * static_cast< float >( delta ), 360.0f );
+				yaw += this->m_spin_yaw;
+			}
+			if ( cfg.yaw_sway.value )
+			{
+				const auto time = g_shared.ctx( ).current_time;
+				yaw += std::sinf( time * 2.0f * std::numbers::pi_v<float> * static_cast< float >( cfg.yaw_sway_speed ) ) * static_cast< float >( cfg.yaw_sway_amount );
+			}
+			if ( cfg.yaw_random.value )
+			{
+				const auto amount = static_cast< float >( cfg.yaw_random_amount );
+				yaw += random::floating( -amount, amount );
+			}
+		}
+		else
+		{
+			this->m_spin_yaw = 0.0f;
+		}
+		if ( cfg.mouse_override.value )
+		{
+			const auto strength = std::clamp( static_cast< float >( cfg.mouse_override_strength ) / 100.0f, 0.0f, 1.0f );
+			const auto mouse_base = cmd->csgo_user_cmd.base( );
+			const auto dx = mouse_base ? static_cast< float >( mouse_base->m_mousedx ) : 0.0f;
+			const auto dy = mouse_base ? static_cast< float >( mouse_base->m_mousedy ) : 0.0f;
+			const auto forwardness = std::clamp( -dy / 50.0f, -1.0f, 1.0f ) * strength;
+			const auto side = std::clamp( dx / 50.0f, -1.0f, 1.0f ) * 90.0f * strength;
+			yaw += math::helpers::normalize_yaw( view_angles.y - yaw ) * forwardness;
+			yaw += side;
+		}
+		this->m_indicator_yaw = math::helpers::normalize_yaw( yaw );
 		return yaw;
+	}
+	misc::antiaim::enemy_info misc::antiaim::find_nearest_enemy( const systems::local::snapshot& local ) const
+	{
+		enemy_info out{};
+		const auto origin = this->local_origin( local.pawn );
+		if ( origin.length_sqr( ) == 0.0f )
+		{
+			return out;
+		}
+		const auto players = systems::g_entities.get_by_type( systems::entities::type::player );
+		for ( const auto& p : players )
+		{
+			if ( !p.ptr || p.ptr == local.controller )
+			{
+				continue;
+			}
+			if ( !memory::read<bool>( p.ptr + SCHEMA( "CCSPlayerController", "m_bPawnIsAlive"_hash ) ) )
+			{
+				continue;
+			}
+			const auto pawn_handle = memory::read<std::uint32_t>( p.ptr + SCHEMA( "CBasePlayerController", "m_hPawn"_hash ) );
+			const auto pawn = systems::g_entities.lookup( pawn_handle );
+			if ( !pawn || pawn == local.pawn )
+			{
+				continue;
+			}
+			if ( !local.is_this_other_team( memory::read<int>( pawn + SCHEMA( "C_BaseEntity", "m_iTeamNum"_hash ) ) ) )
+			{
+				continue;
+			}
+			if ( memory::read<int>( pawn + SCHEMA( "C_BaseEntity", "m_iHealth"_hash ) ) <= 0 )
+			{
+				continue;
+			}
+			if ( memory::read<bool>( pawn + SCHEMA( "C_CSPlayerPawn", "m_bGunGameImmunity"_hash ) ) )
+			{
+				continue;
+			}
+			const auto enemy_origin = this->local_origin( pawn );
+			if ( enemy_origin.length_sqr( ) == 0.0f )
+			{
+				continue;
+			}
+			const auto distance = ( enemy_origin - origin ).length_sqr( );
+			if ( out.valid && distance >= out.distance )
+			{
+				continue;
+			}
+			out.pawn = pawn;
+			out.origin = enemy_origin;
+			out.eye_angles = memory::read<math::vector3>( pawn + SCHEMA( "C_CSPlayerPawn", "m_angEyeAngles"_hash ) );
+			out.distance = distance;
+			out.valid = true;
+		}
+		return out;
+	}
+	misc::antiaim::enemy_info misc::antiaim::find_backstab_threat( const systems::local::snapshot& local, const math::vector3& view_angles ) const
+	{
+		enemy_info out{};
+		const auto origin = this->local_origin( local.pawn );
+		if ( origin.length_sqr( ) == 0.0f )
+		{
+			return out;
+		}
+		math::vector3 forward{}, left{};
+		math::helpers::angle_vectors_left( view_angles, &forward, &left, nullptr );
+		forward.z = 0.0f;
+		if ( forward.length_sqr( ) == 0.0f )
+		{
+			return out;
+		}
+		forward.normalize( );
+		const auto players = systems::g_entities.get_by_type( systems::entities::type::player );
+		for ( const auto& p : players )
+		{
+			if ( !p.ptr || p.ptr == local.controller )
+			{
+				continue;
+			}
+			if ( !memory::read<bool>( p.ptr + SCHEMA( "CCSPlayerController", "m_bPawnIsAlive"_hash ) ) )
+			{
+				continue;
+			}
+			const auto pawn_handle = memory::read<std::uint32_t>( p.ptr + SCHEMA( "CBasePlayerController", "m_hPawn"_hash ) );
+			const auto pawn = systems::g_entities.lookup( pawn_handle );
+			if ( !pawn || pawn == local.pawn )
+			{
+				continue;
+			}
+			if ( !local.is_this_other_team( memory::read<int>( pawn + SCHEMA( "C_BaseEntity", "m_iTeamNum"_hash ) ) ) )
+			{
+				continue;
+			}
+			if ( memory::read<int>( pawn + SCHEMA( "C_BaseEntity", "m_iHealth"_hash ) ) <= 0 )
+			{
+				continue;
+			}
+			const auto enemy_origin = this->local_origin( pawn );
+			auto delta = enemy_origin - origin;
+			delta.z = 0.0f;
+			const auto length = delta.length( );
+			if ( length < 1.0f || length > 300.0f )
+			{
+				continue;
+			}
+			if ( forward.dot( delta / length ) > -0.25f )
+			{
+				continue;
+			}
+			const auto sight = systems::g_tracing.trace( enemy_origin + math::vector3{ 0.0f, 0.0f, 64.0f }, origin + math::vector3{ 0.0f, 0.0f, 64.0f }, local.pawn );
+			if ( sight.fraction < 0.9f )
+			{
+				continue;
+			}
+			if ( out.valid && length >= out.distance )
+			{
+				continue;
+			}
+			out.pawn = pawn;
+			out.origin = enemy_origin;
+			out.distance = length;
+			out.valid = true;
+		}
+		return out;
+	}
+	int misc::antiaim::choose_freestanding_side( const systems::local::snapshot& local, const math::vector3& view_angles, const enemy_info& enemy ) const
+	{
+		if ( !enemy.valid )
+		{
+			return 0;
+		}
+		const auto origin = this->local_origin( local.pawn );
+		if ( origin.length_sqr( ) == 0.0f )
+		{
+			return 0;
+		}
+		const auto enemy_angles = math::helpers::calculate_angle( origin, enemy.origin );
+		const auto relative = math::helpers::normalize_yaw( enemy_angles.y - view_angles.y );
+		auto side = relative > 0.0f ? -1 : 1;
+		math::vector3 forward{}, right{};
+		math::helpers::angle_vectors_2d( view_angles.y, forward, right );
+		const auto start = origin + math::vector3{ 0.0f, 0.0f, 64.0f };
+		constexpr auto reach{ 48.0f };
+		const auto right_trace = systems::g_tracing.trace( start, start + right * reach, local.pawn );
+		const auto left_trace = systems::g_tracing.trace( start, start - right * reach, local.pawn );
+		const auto right_blocked = right_trace.fraction < 0.95f;
+		const auto left_blocked = left_trace.fraction < 0.95f;
+		if ( right_blocked != left_blocked )
+		{
+			side = right_blocked ? 1 : -1;
+		}
+		else if ( right_blocked && left_blocked )
+		{
+			side = right_trace.fraction <= left_trace.fraction ? 1 : -1;
+		}
+		return side;
+	}
+	math::vector3 misc::antiaim::local_origin( std::uintptr_t local_pawn ) const
+	{
+		if ( !local_pawn )
+		{
+			return {};
+		}
+		const auto node = memory::read<std::uintptr_t>( local_pawn + SCHEMA( "C_BaseEntity", "m_pGameSceneNode"_hash ) );
+		if ( !node )
+		{
+			return {};
+		}
+		return memory::read<math::vector3>( node + SCHEMA( "CGameSceneNode", "m_vecAbsOrigin"_hash ) );
 	}
 		void misc::antiaim::correct_movement( systems::input::usercmd* cmd )
 	{

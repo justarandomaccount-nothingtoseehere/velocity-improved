@@ -200,13 +200,28 @@ namespace features::combat {
 		[[nodiscard]] const math::vector3& intent_angles( ) const { return this->m_old_angles; }
 		[[nodiscard]] bool is_rotating_command( ) const { return this->has_modified_angles( ); }
 	private:
-		[[nodiscard]] float get_pitch( float view_pitch );
-		[[nodiscard]] float get_yaw( const math::vector3& view_angles, const systems::local::snapshot& local );
+		struct enemy_info
+		{
+			std::uintptr_t pawn{};
+			math::vector3 origin{};
+			math::vector3 eye_angles{};
+			float distance{};
+			bool valid{};
+		};
+		[[nodiscard]] enemy_info find_nearest_enemy( const systems::local::snapshot& local ) const;
+		[[nodiscard]] enemy_info find_backstab_threat( const systems::local::snapshot& local, const math::vector3& view_angles ) const;
+		[[nodiscard]] int choose_freestanding_side( const systems::local::snapshot& local, const math::vector3& view_angles, const enemy_info& enemy ) const;
+		[[nodiscard]] math::vector3 local_origin( std::uintptr_t local_pawn ) const;
+		[[nodiscard]] float get_pitch( float view_pitch, int command_number, float time, bool yaw_jitter_active, bool yaw_spin_active );
+		[[nodiscard]] float get_yaw( const math::vector3& view_angles, const systems::local::snapshot& local, const enemy_info& enemy, const enemy_info& threat, systems::input::usercmd* cmd, bool jitter_active );
 		void correct_movement( systems::input::usercmd* cmd );
 		[[nodiscard]] bool is_near_ladder( std::uintptr_t local_pawn ) const;
 		math::vector3 m_old_angles{};
 		math::vector3 m_modified_angles{};
 		int m_yaw_side{};
+		std::intptr_t m_last_command{};
+		float m_spin_yaw{};
+		float m_spin_pitch{};
 			bool m_should_correct{};
 			bool m_antiaim_active{};
 			float m_indicator_yaw{};
