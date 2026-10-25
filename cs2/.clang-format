@@ -1,0 +1,51 @@
+Language: Cpp
+Standard: c++20
+BasedOnStyle: LLVM
+ColumnLimit: 120
+IndentWidth: 4
+TabWidth: 4
+UseTab: ForIndentation
+BreakBeforeBraces: Allman
+KeepEmptyLinesAtTheStartOfBlocks: false
+MaxEmptyLinesToKeep: 1
+SpacesInParens: Custom
+SpacesInParensOptions:
+  InEmptyParentheses: true
+  ExceptDoubleParentheses: false
+  InConditionalStatements: true
+  Other: true
+SpacesInAngles: Leave
+PointerAlignment: Left
+DerivePointerAlignment: false
+AllowShortFunctionsOnASingleLine: All
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortCaseLabelsOnASingleLine: false
+AlignAfterOpenBracket: Align
+BinPackArguments: true
+BinPackParameters: true
+SortIncludes: Never
+IncludeBlocks: Preserve
+Cpp11BracedListStyle: true
+FixNamespaceComments: false
+AccessModifierOffset: -4
+IndentCaseLabels: false
+NamespaceIndentation: None
+SpaceAfterCStyleCast: false
+SpaceAfterLogicalNot: false
+SpaceAfterTemplateKeyword: false
+SpaceBeforeAssignmentOperators: true
+SpaceBeforeCtorInitializerColon: true
+SpaceBeforeParens: ControlStatements
+SpaceBeforeRangeBasedForLoopColon: true
+SpacesBeforeTrailingComments: 0
+SpacesInContainerLiterals: false
+SpacesInSquareBrackets: true
+SpaceInEmptyBlock: false
+AlwaysBreakTemplateDeclarations: No
+BreakConstructorInitializers: BeforeComma
+CompactNamespaces: false
+IndentPPDirectives: None
+ForEachMacros: []
+StatementMacros: []
+AttributeMacros: []
